@@ -21,7 +21,7 @@
 # Disabling this will also mean that passwords must be stored in plain text. It
 # is strongly recommended that you only disable WITH_TLS if you are not using
 # password authentication at all.
-WITH_TLS:=yes
+WITH_TLS:=no
 
 # Comment out to disable TLS/PSK support in the broker and client. Requires
 # WITH_TLS=yes.
@@ -67,7 +67,7 @@ WITH_SYSTEMD:=no
 WITH_SRV:=no
 
 # Build with websockets support on the broker.
-WITH_WEBSOCKETS:=no
+WITH_WEBSOCKETS:=yes
 
 # Use elliptic keys in broker
 WITH_EC:=yes
@@ -152,7 +152,7 @@ ifeq ($(UNAME),SunOS)
 		CFLAGS?=-Wall -ggdb -O2
 	endif
 else
-	CFLAGS?=-Wall -ggdb -O2 -Wconversion -Wextra
+	CFLAGS?=-Wall -ggdb -O0 -Wconversion -Wextra
 endif
 
 ifeq ($(WITH_ASAN),yes)
@@ -382,6 +382,7 @@ ifeq ($(WITH_CJSON),yes)
 	CLIENT_LDADD:=$(CLIENT_LDADD) -lcjson
 	CLIENT_STATIC_LDADD:=$(CLIENT_STATIC_LDADD) -lcjson
 	CLIENT_LDFLAGS:=$(CLIENT_LDFLAGS)
+	BROKER_LDADD:=$(BROKER_LDADD) -lcjson
 endif
 
 ifeq ($(WITH_XTREPORT),yes)

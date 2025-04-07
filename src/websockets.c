@@ -15,7 +15,7 @@ SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 Contributors:
    Roger Light - initial implementation and documentation.
 */
-
+#define WITH_WEBSOCKETS
 #ifdef WITH_WEBSOCKETS
 
 #include "config.h"
@@ -28,7 +28,9 @@ Contributors:
 #include "packet_mosq.h"
 #include "sys_tree.h"
 #include "util_mosq.h"
+#include "http.h"
 
+#include <cjson/cJSON.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -42,6 +44,8 @@ Contributors:
  */
 #define WS_SERV_BUF_SIZE 4096
 #define WS_TX_BUF_SIZE (WS_SERV_BUF_SIZE*2)
+
+#define COUNT_THREADS 8
 
 static int callback_mqtt(
 		struct lws *wsi,
@@ -65,6 +69,18 @@ enum mosq_ws_protocols {
 
 struct libws_http_data {
 	FILE *fptr;
+	char* payload;
+	size_t payload_len;
+	size_t payload_send;
+
+	struct lws_spa *spa;
+	char* post_url;
+	char* upload_buf;
+	unsigned long long upload_length; /* the amount of bytes uploaded */
+};
+
+static const char * const param_names[] = {
+	"command"
 };
 
 static struct lws_protocols protocols[] = {
@@ -402,9 +418,20 @@ static char *http__canonical_filename(
 	char *filename, *filename_canonical;
 
 	inlen = strlen(in);
-	if(in[inlen-1] == '/'){
+	if(in[inlen-1] == '/' && inlen == 1){
+		slen = strlen(http_dir) + inlen + strlen("/index.html") + 2;
+	}else if((inlen == 8 && strncmp(in,"/preview",8)==0)
+			|| (inlen == 6 && strncmp(in,"/scada",6)==0)
+			|| strncmp(in,"/chart/home/",12)==0
+			|| strncmp(in,"/chart/preview/",15)==0){
 		slen = strlen(http_dir) + inlen + strlen("/index.html") + 2;
 	}else{
+		for(int i = inlen-2; i >=0; i--){
+			if(in[i] == '.')
+				break;
+			if(in[i] == '/')
+				return NULL;
+		}
 		slen = strlen(http_dir) + inlen + 2;
 	}
 	filename = mosquitto__malloc(slen);
@@ -412,8 +439,13 @@ static char *http__canonical_filename(
 		lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 		return NULL;
 	}
-	if(((char *)in)[inlen-1] == '/'){
+	if(((char *)in)[inlen-1] == '/' && inlen == 1){
 		snprintf(filename, slen, "%s%sindex.html", http_dir, (char *)in);
+	}else if((inlen == 8 && strncmp(in,"/preview",8)==0)
+			|| (inlen == 6 && strncmp(in,"/scada",6)==0)
+			|| strncmp(in,"/chart/home/",12)==0
+			|| strncmp(in,"/chart/preview/",15)==0){
+		snprintf(filename, slen, "%s/scada/index.html", http_dir);
 	}else{
 		snprintf(filename, slen, "%s%s", http_dir, (char *)in);
 	}
@@ -424,7 +456,7 @@ static char *http__canonical_filename(
 	filename_canonical = _fullpath(NULL, filename, 0);
 	mosquitto__free(filename);
 	if(!filename_canonical){
-		lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+		//lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 		return NULL;
 	}
 #else
@@ -453,6 +485,69 @@ static char *http__canonical_filename(
 	return filename_canonical;
 }
 
+static int
+file_upload_cb(void *data, const char *name, const char *filename,
+	       char *buf, int len, enum lws_spa_fileupload_states state)
+{
+	struct libws_http_data *pss = (struct libws_http_data *)data;
+
+	switch (state) {
+	case LWS_UFS_OPEN:
+		break;
+	case LWS_UFS_FINAL_CONTENT:
+	case LWS_UFS_CONTENT:
+		if (len) {
+			if(!pss->upload_buf)
+				pss->upload_buf = mosquitto_calloc(1024*1024*10,1);
+
+			if((pss->upload_length + (unsigned int)len) < 1024*1024*10){
+				memcpy(pss->upload_buf + pss->upload_length, buf, (unsigned int)len);
+				pss->upload_length += (unsigned int)len;
+			}
+		}
+		break;
+	case LWS_UFS_CLOSE:
+		break;
+	}
+
+	return 0;
+}
+
+char* cmd_select_format(char* file_name){
+	struct reply_format {
+		const char *s;
+		size_t sz;
+		const char *ct;
+	};
+	struct reply_format funs[] = {
+		{.s = "txt", .sz = 3, .ct = "text/plain"},
+		{.s = "json", .sz = 4, .ct = "application/json"},
+		{.s = "raw", .sz = 3, .ct = "binary/octet-stream"},
+		{.s = "bin", .sz = 3, .ct = "binary/octet-stream"},
+		{.s = "html", .sz = 4, .ct = "text/html"},
+		{.s = "xhtml", .sz = 5, .ct = "application/xhtml+xml"},
+		{.s = "xml", .sz = 3, .ct = "text/xml"},
+		{.s = "png", .sz = 3, .ct = "image/png"},
+		{.s = "jpg", .sz = 3, .ct = "image/jpeg"},
+		{.s = "jpeg", .sz = 4, .ct = "image/jpeg"},
+		{.s = "svg", .sz = 3, .ct = "image/svg+xml"},
+		{.s = "js", .sz = 2, .ct = "application/javascript"},
+		{.s = "css", .sz = 3, .ct = "text/css"},
+	};
+
+	size_t ext_len;
+	char* ext = strrchr(file_name,'.');
+	if(ext){
+		ext += 1;
+		ext_len = strlen(ext);
+	}
+	for(int i = 0; i < sizeof(funs)/sizeof(funs[0]); ++i) {
+		if(ext_len == (int)funs[i].sz && strncmp(ext, funs[i].s, ext_len) == 0) {
+			return (char*)funs[i].ct;
+		}
+	}
+	return (char*)funs[0].ct;
+}
 
 static int callback_http(
 		struct lws *wsi,
@@ -476,6 +571,17 @@ static int callback_http(
 	/* FIXME - ssl cert verification is done here. */
 
 	switch (reason) {
+		case LWS_CALLBACK_CLOSED_CLIENT_HTTP:
+			if (u->spa && lws_spa_destroy(u->spa))
+				return -1;
+			break;
+		case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
+			/* called when our wsi user_space is going to be destroyed */
+			if (u->spa) {
+				lws_spa_destroy(u->spa);
+				u->spa = NULL;
+			}
+			break;
 		case LWS_CALLBACK_HTTP:
 			if(!u){
 				return -1;
@@ -493,71 +599,163 @@ static int callback_http(
 			}
 
 			/* Forbid POST */
-			if(lws_hdr_total_length(wsi, WSI_TOKEN_POST_URI)){
+			if(lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI)){
+				filename_canonical = http__canonical_filename(wsi, (char *)in, http_dir);
+
+				if(filename_canonical){
+					u->fptr = fopen(filename_canonical, "rb");
+					if(!u->fptr){
+						free(filename_canonical);
+						lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL);
+						return -1;
+					}
+					if(fstat(fileno(u->fptr), &filestat) < 0){
+						free(filename_canonical);
+						lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+						fclose(u->fptr);
+						u->fptr = NULL;
+						return -1;
+					}
+
+
+					if((filestat.st_mode & S_IFDIR) == S_IFDIR){
+						fclose(u->fptr);
+						u->fptr = NULL;
+						free(filename_canonical);
+
+						/* FIXME - use header functions from lws 2.x */
+						buflen = (size_t)snprintf((char *)buf, 4096, "HTTP/1.0 302 OK\r\n"
+														"Location: %s/\r\n\r\n",
+														(char *)in);
+						return lws_write(wsi, buf, buflen, LWS_WRITE_HTTP);
+					}
+
+					if((filestat.st_mode & S_IFREG) != S_IFREG){
+						lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, NULL);
+						fclose(u->fptr);
+						u->fptr = NULL;
+						free(filename_canonical);
+						return -1;
+					}
+
+					log__printf(NULL, MOSQ_LOG_DEBUG, "http serving file \"%s\".", filename_canonical);
+					char* mime = cmd_select_format(filename_canonical);
+					free(filename_canonical);
+					/* FIXME - use header functions from lws 2.x */
+					buflen = (size_t)snprintf((char *)buf, 4096, "HTTP/1.0 200 OK\r\n"
+														"Server: mosquitto\r\n"
+														"Allow: GET,POST,PUT,OPTIONS\r\n"
+														"Access-Control-Allow-Methods: GET,POST,PUT,OPTIONS\r\n"
+														"Access-Control-Allow-Origin: *\r\n"
+														"Content-Type: %s\r\n"
+														"Content-Length: %u\r\n\r\n",mime,
+														(unsigned int)filestat.st_size);
+		            if(lws_write(wsi, buf, buflen, LWS_WRITE_HTTP) < 0){
+						fclose(u->fptr);
+						u->fptr = NULL;
+						return -1;
+					}
+		            lws_callback_on_writable(wsi);
+				}else{
+					cJSON* j_responses;
+					int ret = run_url((const char *)in,NULL,&j_responses);
+					if (ret){
+						lws_return_http_status(wsi, ret, NULL);
+						return -1;
+					}
+					u->payload = cJSON_PrintUnformatted(j_responses);
+					cJSON_Delete(j_responses);
+					if(u->payload == NULL){
+						lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+						return -1;
+					}
+					u->payload_len = strlen(u->payload);
+					u->payload_send = 0;
+
+					size_t buflen = (size_t)snprintf((char *)buf, 4096, "HTTP/1.0 200 OK\r\n"
+																			"Server: mosquitto\r\n"
+																			"Allow: GET,POST,PUT,OPTIONS\r\n"
+																			"Access-Control-Allow-Methods: GET,POST,PUT,OPTIONS\r\n"
+																			"Access-Control-Allow-Origin: *\r\n"
+																			"Content-Length: %u\r\n\r\n",
+																			(unsigned int)u->payload_len);
+					if(lws_write(wsi, buf, buflen, LWS_WRITE_HTTP) < 0){
+						free(u->payload);
+						u->payload = NULL;
+						u->payload_len = 0;
+						return -1;
+					}
+
+					lws_callback_on_writable(wsi);
+				}
+			}else if(lws_hdr_total_length(wsi, WSI_TOKEN_POST_URI)){
+				if(u){
+					u->post_url = mosquitto__malloc(len+1);
+					memcpy(u->post_url,in,len);
+					u->post_url[len]=0;
+				}
+			}else{
 				lws_return_http_status(wsi, HTTP_STATUS_METHOD_NOT_ALLOWED, NULL);
 				return -1;
 			}
-
-			filename_canonical = http__canonical_filename(wsi, (char *)in, http_dir);
-			if(!filename_canonical) return -1;
-
-			u->fptr = fopen(filename_canonical, "rb");
-			if(!u->fptr){
-				free(filename_canonical);
-				lws_return_http_status(wsi, HTTP_STATUS_NOT_FOUND, NULL);
-				return -1;
-			}
-			if(fstat(fileno(u->fptr), &filestat) < 0){
-				free(filename_canonical);
-				lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
-				fclose(u->fptr);
-				u->fptr = NULL;
-				return -1;
-			}
-
-
-			if((filestat.st_mode & S_IFDIR) == S_IFDIR){
-				fclose(u->fptr);
-				u->fptr = NULL;
-				free(filename_canonical);
-
-				/* FIXME - use header functions from lws 2.x */
-				buflen = (size_t)snprintf((char *)buf, 4096, "HTTP/1.0 302 OK\r\n"
-												"Location: %s/\r\n\r\n",
-												(char *)in);
-				return lws_write(wsi, buf, buflen, LWS_WRITE_HTTP);
-			}
-
-			if((filestat.st_mode & S_IFREG) != S_IFREG){
-				lws_return_http_status(wsi, HTTP_STATUS_FORBIDDEN, NULL);
-				fclose(u->fptr);
-				u->fptr = NULL;
-				free(filename_canonical);
-				return -1;
-			}
-
-			log__printf(NULL, MOSQ_LOG_DEBUG, "http serving file \"%s\".", filename_canonical);
-			free(filename_canonical);
-			/* FIXME - use header functions from lws 2.x */
-			buflen = (size_t)snprintf((char *)buf, 4096, "HTTP/1.0 200 OK\r\n"
-												"Server: mosquitto\r\n"
-												"Content-Length: %u\r\n\r\n",
-												(unsigned int)filestat.st_size);
-            if(lws_write(wsi, buf, buflen, LWS_WRITE_HTTP) < 0){
-				fclose(u->fptr);
-				u->fptr = NULL;
-				return -1;
-			}
-			lws_callback_on_writable(wsi);
 			break;
 
 		case LWS_CALLBACK_HTTP_BODY:
-			/* For extra POST data? */
-			return -1;
+			if(u){
+				if (!u->spa) {
+					u->spa = lws_spa_create(wsi, param_names,
+							LWS_ARRAY_SIZE(param_names), 1024,
+							file_upload_cb, u);
+					if (!u->spa)
+						return -1;
+				}
+				if (lws_spa_process(u->spa, in, (int)len))
+					return -1;
+			}
+			break;
 
 		case LWS_CALLBACK_HTTP_BODY_COMPLETION:
-			/* For end of extra POST data? */
-			return -1;
+			if(u)
+				lws_spa_finalize(u->spa);
+			if(u && u->post_url){
+				cJSON* j_responses;
+				char* body = lws_spa_get_string(u->spa, 0);
+				if(u->upload_buf)
+					body = u->upload_buf;
+				int ret = run_url((const char *)u->post_url,body,&j_responses);
+				mosquitto__free(u->post_url);
+				u->post_url = NULL;
+				if (ret){
+					lws_return_http_status(wsi, ret, NULL);
+					return -1;
+				}
+				u->payload = cJSON_PrintUnformatted(j_responses);
+				cJSON_Delete(j_responses);
+				if(u->payload == NULL){
+					lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
+					return -1;
+				}
+				u->payload_len = strlen(u->payload);
+				u->payload_send = 0;
+
+				size_t buflen = (size_t)snprintf((char *)buf, 4096, "HTTP/1.0 200 OK\r\n"
+																		"Server: mosquitto\r\n"
+																		"Allow: GET,POST,PUT,OPTIONS\r\n"
+																		"Access-Control-Allow-Methods: GET,POST,PUT,OPTIONS\r\n"
+																		"Access-Control-Allow-Origin: *\r\n"
+																		"Content-Length: %u\r\n\r\n",
+																		(unsigned int)u->payload_len);
+				if(lws_write(wsi, buf, buflen, LWS_WRITE_HTTP) < 0){
+					free(u->payload);
+					u->payload = NULL;
+					u->payload_len = 0;
+					return -1;
+				}
+
+				lws_callback_on_writable(wsi);
+			}
+
+			break;
 
 		case LWS_CALLBACK_FILTER_HTTP_CONNECTION:
 			/* Access control here */
@@ -591,6 +789,24 @@ static int callback_http(
 						}
 					}
 				}while(u->fptr && !lws_send_pipe_choked(wsi));
+				lws_callback_on_writable(wsi);
+			}else if(u && u->payload){
+				do{
+					buflen = 4096;
+					if(buflen > (u->payload_len - u->payload_send))
+						buflen = u->payload_len - u->payload_send;
+
+					rc = lws_write(wsi, u->payload+u->payload_send, buflen, LWS_WRITE_HTTP);
+					if(rc < 0){
+						return -1;
+					}
+					wlen = (size_t)rc;
+					u->payload_send += wlen;
+					if(u->payload_send == u->payload_len){
+						free(u->payload);
+						u->payload = NULL;
+					}
+				}while(u->payload && !lws_send_pipe_choked(wsi));
 				lws_callback_on_writable(wsi);
 			}else{
 				return -1;
@@ -675,6 +891,11 @@ void mosq_websockets_init(struct mosquitto__listener *listener, const struct mos
 	int i;
 	struct libws_mqtt_hack *user;
 
+	if(http_init()){
+		log__printf(NULL, MOSQ_LOG_ERR, "Http init fail.");
+		return;
+	}
+
 	/* Count valid protocols */
 	for(protocol_count=0; protocols[protocol_count].name; protocol_count++);
 
@@ -741,6 +962,7 @@ void mosq_websockets_init(struct mosquitto__listener *listener, const struct mos
 	info.user = user;
 	info.pt_serv_buf_size = WS_SERV_BUF_SIZE;
 	listener->ws_protocol = p;
+	info->count_threads = COUNT_THREADS;
 
 	lws_set_log_level(conf->websockets_log_level, log_wrap);
 

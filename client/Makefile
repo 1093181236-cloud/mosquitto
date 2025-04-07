@@ -1,27 +1,30 @@
 include ../config.mk
 
-.PHONY: all install uninstall reallyclean clean static static_pub static_sub static_rr
+.PHONY: all install uninstall reallyclean clean static static_pub static_sub static_rr static_pub_test
 
 ifeq ($(WITH_SHARED_LIBRARIES),yes)
 SHARED_DEP:=../lib/libmosquitto.so.${SOVERSION}
 endif
 
 ifeq ($(WITH_SHARED_LIBRARIES),yes)
-ALL_DEPS:= mosquitto_pub mosquitto_sub mosquitto_rr
+ALL_DEPS:= mosquitto_pub mosquitto_sub mosquitto_rr mosquitto_pub_test
 else
 ifeq ($(WITH_STATIC_LIBRARIES),yes)
-ALL_DEPS:= static_pub static_sub static_rr
+ALL_DEPS:= static_pub static_sub static_rr static_pub_test
 endif
 endif
 
 all : ${ALL_DEPS}
 
-static : static_pub static_sub static_rr
+static : static_pub static_sub static_rr static_pub_test
 	# This makes mosquitto_pub/sub/rr versions that are statically linked with
 	# libmosquitto only.
 
 static_pub : pub_client.o pub_shared.o client_props.o client_shared.o ../lib/libmosquitto.a
 	${CROSS_COMPILE}${CC} $^ -o mosquitto_pub ${CLIENT_LDFLAGS} ${STATIC_LIB_DEPS} ${CLIENT_STATIC_LDADD}
+	
+static_pub_test : pub_test.o  ../lib/libmosquitto.a
+	${CROSS_COMPILE}${CC} $^ -o mosquitto_pub_test ${CLIENT_LDFLAGS} ${STATIC_LIB_DEPS} ${CLIENT_STATIC_LDADD}
 
 static_sub : sub_client.o sub_client_output.o client_props.o client_shared.o ../lib/libmosquitto.a
 	${CROSS_COMPILE}${CC} $^ -o mosquitto_sub ${CLIENT_LDFLAGS} ${STATIC_LIB_DEPS} ${CLIENT_STATIC_LDADD}
@@ -37,6 +40,12 @@ mosquitto_sub : sub_client.o sub_client_output.o client_shared.o client_props.o
 
 mosquitto_rr : rr_client.o client_shared.o client_props.o pub_shared.o sub_client_output.o
 	${CROSS_COMPILE}${CC} $(CLIENT_LDFLAGS) $^ -o $@ $(CLIENT_LDADD)
+	
+mosquitto_pub_test : pub_test.o
+	${CROSS_COMPILE}${CC} $(CLIENT_LDFLAGS) $^ -o $@ $(CLIENT_LDADD)
+	
+pub_test.o : pub_test.c ${SHARED_DEP}
+	${CROSS_COMPILE}${CC} $(CLIENT_CPPFLAGS) $(CLIENT_CFLAGS) -c $< -o $@
 
 pub_client.o : pub_client.c ${SHARED_DEP}
 	${CROSS_COMPILE}${CC} $(CLIENT_CPPFLAGS) $(CLIENT_CFLAGS) -c $< -o $@

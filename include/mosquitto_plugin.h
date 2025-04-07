@@ -412,7 +412,6 @@ mosq_plugin_EXPORT int mosquitto_auth_start(void *user_data, struct mosquitto *c
 
 mosq_plugin_EXPORT int mosquitto_auth_continue(void *user_data, struct mosquitto *client, const char *method, const void *data_in, uint16_t data_in_len, void **data_out, uint16_t *data_out_len);
 
-
 #ifdef __cplusplus
 }
 #endif

@@ -197,7 +197,7 @@ void plugin__handle_tick(void)
 		for(i=0; i < db.config->listener_count; i++){
 			opts = &db.config->listeners[i].security_options;
 			memset(&event_data, 0, sizeof(event_data));
-
+			event_data.now_s = db.now_s;
 			DL_FOREACH(opts->plugin_callbacks.tick, cb_base){
 				cb_base->cb(MOSQ_EVT_TICK, &event_data, cb_base->userdata);
 			}
@@ -205,7 +205,7 @@ void plugin__handle_tick(void)
 	}else{
 		opts = &db.config->security_options;
 		memset(&event_data, 0, sizeof(event_data));
-
+		event_data.now_s = db.now_s;
 		DL_FOREACH(opts->plugin_callbacks.tick, cb_base){
 			cb_base->cb(MOSQ_EVT_TICK, &event_data, cb_base->userdata);
 		}

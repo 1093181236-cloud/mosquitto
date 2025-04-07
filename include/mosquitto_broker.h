@@ -479,6 +479,14 @@ mosq_EXPORT int mosquitto_kick_client_by_username(const char *username, bool wit
 
 /* =========================================================================
  *
+ * Section: http functions
+ *
+ * ========================================================================= */
+mosq_EXPORT int url_register(char* url,void* cb);
+mosq_EXPORT int url_unregister(char* url);
+
+/* =========================================================================
+ *
  * Section: Publishing functions
  *
  * ========================================================================= */
