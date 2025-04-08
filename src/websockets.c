@@ -39,13 +39,12 @@ Contributors:
 #  include <sys/socket.h>
 #endif
 
+
 /* Be careful if changing these, if TX is not bigger than SERV then there can
  * be very large write performance penalties.
  */
 #define WS_SERV_BUF_SIZE 4096
 #define WS_TX_BUF_SIZE (WS_SERV_BUF_SIZE*2)
-
-#define COUNT_THREADS 8
 
 static int callback_mqtt(
 		struct lws *wsi,
@@ -882,6 +881,19 @@ static void log_wrap(int level, const char *line)
 	l[strlen(line)-1] = '\0'; /* Remove \n */
 	log__printf(NULL, MOSQ_LOG_WEBSOCKETS, "%s", l);
 }
+extern int run;
+static struct lws_context *g_context;
+void *thread_service(void *threadid)
+{
+	while (lws_service_tsi(g_context, 10000,
+			       (int)(lws_intptr_t)threadid) >= 0 &&
+			run)
+		;
+
+	pthread_exit(NULL);
+
+	return NULL;
+}
 
 void mosq_websockets_init(struct mosquitto__listener *listener, const struct mosquitto__config *conf)
 {
@@ -962,7 +974,7 @@ void mosq_websockets_init(struct mosquitto__listener *listener, const struct mos
 	info.user = user;
 	info.pt_serv_buf_size = WS_SERV_BUF_SIZE;
 	listener->ws_protocol = p;
-	info->count_threads = COUNT_THREADS;
+	info.count_threads = WEBSOCKETS_THREADS;
 
 	lws_set_log_level(conf->websockets_log_level, log_wrap);
 
@@ -970,6 +982,14 @@ void mosq_websockets_init(struct mosquitto__listener *listener, const struct mos
 	listener->ws_in_init = true;
 	listener->ws_context = lws_create_context(&info);
 	listener->ws_in_init = false;
+
+	if(listener->ws_context){
+		g_context = listener->ws_context;
+		for (int n = 0; n < lws_get_count_threads(listener->ws_context); n++)
+			if (pthread_create(&user->pthread_service[n], NULL, thread_service,
+					   (void *)(lws_intptr_t)n))
+				log__printf(NULL, MOSQ_LOG_ERR,"Failed to start service thread on port %d.", listener->port);
+	}
 }
 
 
