@@ -22,7 +22,7 @@ Contributors:
 
 #include "config.h"
 #include <stdio.h>
-#include <pthread.h>
+
 #ifdef WITH_WEBSOCKETS
 #  include <libwebsockets.h>
 #  if LWS_LIBRARY_VERSION_NUMBER >= 3002000 && !defined(LWS_WITH_EXTERNAL_POLL)
@@ -562,10 +562,8 @@ struct mosquitto__bridge{
 };
 
 #ifdef WITH_WEBSOCKETS
-#define WEBSOCKETS_THREADS 8
 struct libws_mqtt_hack {
 	char *http_dir;
-	pthread_t pthread_service[WEBSOCKETS_THREADS];
 	struct mosquitto__listener *listener;
 };
 

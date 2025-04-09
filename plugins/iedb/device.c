@@ -2394,6 +2394,9 @@ int tsDiffQueryCommand(int argc,char** argv,cJSON** j_responses) {
     if (genericParseTimestamp(argv[0],&period,1) != C_OK){
         return HTTP_STATUS_BAD_REQUEST;
     }
+    if (period < 1){
+        return HTTP_STATUS_BAD_REQUEST;
+    }
     if (genericParseTimestamp(argv[1],&startQueryTime,1) != C_OK){
     	return HTTP_STATUS_BAD_REQUEST;
     }

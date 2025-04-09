@@ -384,15 +384,9 @@ static int listeners__start(void)
 static void listeners__stop(void)
 {
 	int i;
-	void *retval;
 	for(i=0; i<db.config->listener_count; i++){
 #ifdef WITH_WEBSOCKETS
 		if(db.config->listeners[i].ws_context){
-			struct libws_mqtt_hack *hack = (struct libws_mqtt_hack *)lws_context_user(db.config->listeners[i].ws_context);
-			int n = lws_get_count_threads(db.config->listeners[i].ws_context);
-			while ((--n) >= 0)
-				pthread_join(hack->pthread_service[n], &retval);
-
 			lws_context_destroy(db.config->listeners[i].ws_context);
 		}
 		mosquitto__free(db.config->listeners[i].ws_protocol);

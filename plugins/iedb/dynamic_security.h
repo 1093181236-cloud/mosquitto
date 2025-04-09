@@ -32,6 +32,9 @@ Contributors:
  * #
  * ################################################################ */
 
+#define ACL_TYPE_HTTP_GET "httpGet"
+#define ACL_TYPE_HTTP_POST "httpPost"
+
 #define ACL_TYPE_PUB_C_RECV "publishClientReceive"
 #define ACL_TYPE_PUB_C_SEND "publishClientSend"
 #define ACL_TYPE_SUB_GENERIC "subscribe"
@@ -114,6 +117,8 @@ struct dynsec__acls{
 	struct dynsec__acl *subscribe_pattern;
 	struct dynsec__acl *unsubscribe_literal;
 	struct dynsec__acl *unsubscribe_pattern;
+	struct dynsec__acl *http_get;
+	struct dynsec__acl *http_post;
 };
 
 struct dynsec__role{

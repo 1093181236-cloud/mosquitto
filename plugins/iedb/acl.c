@@ -82,6 +82,48 @@ static int acl_check_publish_c_send(struct mosquitto_evt_acl_check *ed, struct d
 	return MOSQ_ERR_NOT_FOUND;
 }
 
+static int acl_check_http_get(struct mosquitto_evt_acl_check *ed, struct dynsec__rolelist *base_rolelist)
+{
+	struct dynsec__rolelist *rolelist, *rolelist_tmp = NULL;
+	struct dynsec__acl *acl, *acl_tmp = NULL;
+	bool result;
+
+	HASH_ITER(hh, base_rolelist, rolelist, rolelist_tmp){
+		HASH_ITER(hh, rolelist->role->acls.http_get, acl, acl_tmp){
+			mosquitto_topic_matches_sub(acl->topic, ed->topic, &result);
+			if(result){
+				if(acl->allow){
+					return MOSQ_ERR_SUCCESS;
+				}else{
+					return MOSQ_ERR_ACL_DENIED;
+				}
+			}
+		}
+	}
+	return MOSQ_ERR_NOT_FOUND;
+}
+
+static int acl_check_http_post(struct mosquitto_evt_acl_check *ed, struct dynsec__rolelist *base_rolelist)
+{
+	struct dynsec__rolelist *rolelist, *rolelist_tmp = NULL;
+	struct dynsec__acl *acl, *acl_tmp = NULL;
+	bool result;
+
+	HASH_ITER(hh, base_rolelist, rolelist, rolelist_tmp){
+		HASH_ITER(hh, rolelist->role->acls.http_post, acl, acl_tmp){
+			mosquitto_topic_matches_sub(acl->topic, ed->topic, &result);
+			if(result){
+				if(acl->allow){
+					return MOSQ_ERR_SUCCESS;
+				}else{
+					return MOSQ_ERR_ACL_DENIED;
+				}
+			}
+		}
+	}
+	return MOSQ_ERR_NOT_FOUND;
+}
+
 
 /* ################################################################
  * #

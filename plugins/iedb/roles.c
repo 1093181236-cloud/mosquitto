@@ -90,6 +90,8 @@ static void role__free_item(struct dynsec__role *role, bool remove_from_hash)
 	mosquitto_free(role->text_description);
 	mosquitto_free(role->rolename);
 	role__free_all_acls(&role->acls.publish_c_send);
+	role__free_all_acls(&role->acls.http_get);
+	role__free_all_acls(&role->acls.http_post);
 	role__free_all_acls(&role->acls.publish_c_recv);
 	role__free_all_acls(&role->acls.subscribe_literal);
 	role__free_all_acls(&role->acls.subscribe_pattern);
@@ -211,6 +213,10 @@ int select_acl_callback(void *data, int argc, char **argv, char **azColName){
 	struct dynsec__acl **acllist, *acl;
 	if(!strcasecmp(acltype, ACL_TYPE_PUB_C_SEND)){
 		acllist = &role->acls.publish_c_send;
+	}else if(!strcasecmp(acltype, ACL_TYPE_HTTP_GET)){
+		acllist = &role->acls.http_get;
+	}else if(!strcasecmp(acltype, ACL_TYPE_HTTP_POST)){
+		acllist = &role->acls.http_post;
 	}else if(!strcasecmp(acltype, ACL_TYPE_PUB_C_RECV)){
 		acllist = &role->acls.publish_c_recv;
 	}else if(!strcasecmp(acltype, ACL_TYPE_SUB_LITERAL)){
@@ -332,6 +338,12 @@ int db_insert_role_acls(struct dynsec__role *role){
 	struct dynsec__acl *acl,*acl_tmp;
 	HASH_ITER(hh, role->acls.publish_c_send, acl, acl_tmp){
 		db_insert_acl(role->id,acl->topic,ACL_TYPE_PUB_C_SEND,acl->priority,acl->allow);
+	}
+	HASH_ITER(hh, role->acls.http_get, acl, acl_tmp){
+		db_insert_acl(role->id,acl->topic,ACL_TYPE_HTTP_GET,acl->priority,acl->allow);
+	}
+	HASH_ITER(hh, role->acls.http_post, acl, acl_tmp){
+		db_insert_acl(role->id,acl->topic,ACL_TYPE_HTTP_POST,acl->priority,acl->allow);
 	}
 	HASH_ITER(hh, role->acls.publish_c_recv, acl, acl_tmp){
 		db_insert_acl(role->id,acl->topic,ACL_TYPE_PUB_C_RECV,acl->priority,acl->allow);
@@ -551,6 +563,8 @@ int dynsec_roles__process_create(cJSON *j_responses, cJSON *command)
 	j_acls = cJSON_GetObjectItem(command, "acls");
 	if(j_acls && cJSON_IsArray(j_acls)){
 		if(dynsec_roles__acl_load(j_acls, ACL_TYPE_PUB_C_SEND, &role->acls.publish_c_send) != 0
+				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_HTTP_GET, &role->acls.http_get) != 0
+				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_HTTP_POST, &role->acls.http_post) != 0
 				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_PUB_C_RECV, &role->acls.publish_c_recv) != 0
 				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_SUB_LITERAL, &role->acls.subscribe_literal) != 0
 				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_SUB_PATTERN, &role->acls.subscribe_pattern) != 0
@@ -670,6 +684,8 @@ static int add_acls_to_json(cJSON *j_role, struct dynsec__role *role)
 	}
 
 	if(add_single_acl_to_json(j_acls, ACL_TYPE_PUB_C_SEND, role->acls.publish_c_send) != MOSQ_ERR_SUCCESS
+			|| add_single_acl_to_json(j_acls, ACL_TYPE_HTTP_GET, role->acls.http_get) != MOSQ_ERR_SUCCESS
+			|| add_single_acl_to_json(j_acls, ACL_TYPE_HTTP_POST, role->acls.http_post) != MOSQ_ERR_SUCCESS
 			|| add_single_acl_to_json(j_acls, ACL_TYPE_PUB_C_RECV, role->acls.publish_c_recv) != MOSQ_ERR_SUCCESS
 			|| add_single_acl_to_json(j_acls, ACL_TYPE_SUB_LITERAL, role->acls.subscribe_literal) != MOSQ_ERR_SUCCESS
 			|| add_single_acl_to_json(j_acls, ACL_TYPE_SUB_PATTERN, role->acls.subscribe_pattern) != MOSQ_ERR_SUCCESS
@@ -800,6 +816,10 @@ int dynsec_roles__process_add_acl(cJSON *j_responses, cJSON *command)
 	}
 	if(!strcasecmp(acltype, ACL_TYPE_PUB_C_SEND)){
 		acllist = &role->acls.publish_c_send;
+	}else if(!strcasecmp(acltype, ACL_TYPE_HTTP_GET)){
+		acllist = &role->acls.http_get;
+	}else if(!strcasecmp(acltype, ACL_TYPE_HTTP_POST)){
+		acllist = &role->acls.http_post;
 	}else if(!strcasecmp(acltype, ACL_TYPE_PUB_C_RECV)){
 		acllist = &role->acls.publish_c_recv;
 	}else if(!strcasecmp(acltype, ACL_TYPE_SUB_LITERAL)){
@@ -893,6 +913,10 @@ int dynsec_roles__process_remove_acl(cJSON *j_responses, cJSON *command)
 	}
 	if(!strcasecmp(acltype, ACL_TYPE_PUB_C_SEND)){
 		acllist = &role->acls.publish_c_send;
+	}else if(!strcasecmp(acltype, ACL_TYPE_HTTP_GET)){
+		acllist = &role->acls.http_get;
+	}else if(!strcasecmp(acltype, ACL_TYPE_HTTP_POST)){
+		acllist = &role->acls.http_post;
 	}else if(!strcasecmp(acltype, ACL_TYPE_PUB_C_RECV)){
 		acllist = &role->acls.publish_c_recv;
 	}else if(!strcasecmp(acltype, ACL_TYPE_SUB_LITERAL)){
@@ -996,6 +1020,7 @@ int dynsec_roles__process_modify(cJSON *j_responses, cJSON *command)
 	struct dynsec__role *role;
 	char *str;
 	cJSON *j_acls;
+	struct dynsec__acl *tmp_http_get = NULL, *tmp_http_post = NULL;
 	struct dynsec__acl *tmp_publish_c_send = NULL, *tmp_publish_c_recv = NULL;
 	struct dynsec__acl *tmp_subscribe_literal = NULL, *tmp_subscribe_pattern = NULL;
 	struct dynsec__acl *tmp_unsubscribe_literal = NULL, *tmp_unsubscribe_pattern = NULL;
@@ -1038,6 +1063,8 @@ int dynsec_roles__process_modify(cJSON *j_responses, cJSON *command)
 	j_acls = cJSON_GetObjectItem(command, "acls");
 	if(j_acls && cJSON_IsArray(j_acls)){
 		if(dynsec_roles__acl_load(j_acls, ACL_TYPE_PUB_C_SEND, &tmp_publish_c_send) != 0
+				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_HTTP_GET, &tmp_http_get) != 0
+				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_HTTP_POST, &tmp_http_post) != 0
 				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_PUB_C_RECV, &tmp_publish_c_recv) != 0
 				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_SUB_LITERAL, &tmp_subscribe_literal) != 0
 				|| dynsec_roles__acl_load(j_acls, ACL_TYPE_SUB_PATTERN, &tmp_subscribe_pattern) != 0
@@ -1046,6 +1073,8 @@ int dynsec_roles__process_modify(cJSON *j_responses, cJSON *command)
 				){
 
 			/* Free any that were successful */
+			role__free_all_acls(&tmp_http_get);
+			role__free_all_acls(&tmp_http_post);
 			role__free_all_acls(&tmp_publish_c_send);
 			role__free_all_acls(&tmp_publish_c_recv);
 			role__free_all_acls(&tmp_subscribe_literal);
@@ -1057,6 +1086,8 @@ int dynsec_roles__process_modify(cJSON *j_responses, cJSON *command)
 			return MOSQ_ERR_NOMEM;
 		}
 
+		role__free_all_acls(&role->acls.http_get);
+		role__free_all_acls(&role->acls.http_post);
 		role__free_all_acls(&role->acls.publish_c_send);
 		role__free_all_acls(&role->acls.publish_c_recv);
 		role__free_all_acls(&role->acls.subscribe_literal);
@@ -1064,6 +1095,8 @@ int dynsec_roles__process_modify(cJSON *j_responses, cJSON *command)
 		role__free_all_acls(&role->acls.unsubscribe_literal);
 		role__free_all_acls(&role->acls.unsubscribe_pattern);
 
+		role->acls.http_get = tmp_http_get;
+		role->acls.http_post = tmp_http_post;
 		role->acls.publish_c_send = tmp_publish_c_send;
 		role->acls.publish_c_recv = tmp_publish_c_recv;
 		role->acls.subscribe_literal = tmp_subscribe_literal;
