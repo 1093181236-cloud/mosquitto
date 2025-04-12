@@ -79,7 +79,7 @@ struct libws_http_data {
 };
 
 static const char * const param_names[] = {
-	"command"
+	"content"
 };
 
 static struct lws_protocols protocols[] = {

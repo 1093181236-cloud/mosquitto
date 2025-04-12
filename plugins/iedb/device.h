@@ -162,7 +162,7 @@ device *deviceNew(long long id);
 void freeDevice(void *p);
 void fieldFree(void* p);
 size_t getFieldCacheSize(FIELD_TYPE type);
-field* fieldNew(long long id,FIELD_TYPE type,timestamp_t ctime);
+//field* fieldNew(long long id,FIELD_TYPE type,timestamp_t ctime);
 
 void DeleteOldFile(void);
 

@@ -733,26 +733,19 @@ int dynsec_roles__process_list(cJSON *j_responses, cJSON *command)
 {
 	bool verbose;
 	struct dynsec__role *role, *role_tmp = NULL;
-	cJSON *tree, *j_roles, *j_role, *j_data;
+	cJSON *j_roles, *j_role, *j_data;
 	int i, count, offset;
 
 	json_get_bool(command, "verbose", &verbose, true, false);
 	json_get_int(command, "count", &count, true, -1);
 	json_get_int(command, "offset", &offset, true, 0);
 
-	tree = cJSON_CreateObject();
-	if(tree == NULL){
-		cJSON_AddStringToObject(j_responses,"info","Internal error");
-		return MOSQ_ERR_NOMEM;
-	}
-
-	if(cJSON_AddStringToObject(tree, "command", "listRoles") == NULL
-			|| (j_data = cJSON_AddObjectToObject(tree, "data")) == NULL
+	if(cJSON_AddStringToObject(j_responses, "command", "listRoles") == NULL
+			|| (j_data = cJSON_AddObjectToObject(j_responses, "data")) == NULL
 			|| cJSON_AddIntToObject(j_data, "totalCount", (int)HASH_CNT(hh, local_roles)) == NULL
 			|| (j_roles = cJSON_AddArrayToObject(j_data, "roles")) == NULL
 			){
 
-		cJSON_Delete(tree);
 		cJSON_AddStringToObject(j_responses,"info","Internal error");
 		return MOSQ_ERR_NOMEM;
 	}
@@ -762,7 +755,6 @@ int dynsec_roles__process_list(cJSON *j_responses, cJSON *command)
 		if(i>=offset){
 			j_role = add_role_to_json(role, verbose);
 			if(j_role == NULL){
-				cJSON_Delete(tree);
 				cJSON_AddStringToObject(j_responses,"info","Internal error");
 				return MOSQ_ERR_NOMEM;
 			}
@@ -778,7 +770,6 @@ int dynsec_roles__process_list(cJSON *j_responses, cJSON *command)
 		i++;
 	}
 
-	cJSON_AddItemToArray(j_responses, tree);
 	mosquitto_log_printf(MOSQ_LOG_INFO, "dynsec: listRoles | verbose=%s | count=%d | offset=%d",
 			verbose?"true":"false", count, offset);
 
@@ -985,29 +976,20 @@ int dynsec_roles__process_get(cJSON *j_responses, cJSON *command)
 		return MOSQ_ERR_SUCCESS;
 	}
 
-	tree = cJSON_CreateObject();
-	if(tree == NULL){
-		cJSON_AddStringToObject(j_responses,"info","Internal error");
-		return MOSQ_ERR_NOMEM;
-	}
-
-	if(cJSON_AddStringToObject(tree, "command", "getRole") == NULL
-			|| (j_data = cJSON_AddObjectToObject(tree, "data")) == NULL
+	if(cJSON_AddStringToObject(j_responses, "command", "getRole") == NULL
+			|| (j_data = cJSON_AddObjectToObject(j_responses, "data")) == NULL
 			){
 
-		cJSON_Delete(tree);
 		cJSON_AddStringToObject(j_responses,"info","Internal error");
 		return MOSQ_ERR_NOMEM;
 	}
 
 	j_role = add_role_to_json(role, true);
 	if(j_role == NULL){
-		cJSON_Delete(tree);
 		cJSON_AddStringToObject(j_responses,"info","Internal error");
 		return MOSQ_ERR_NOMEM;
 	}
 	cJSON_AddItemToObject(j_data, "role", j_role);
-	cJSON_AddItemToArray(j_responses, tree);
 
 	return MOSQ_ERR_SUCCESS;
 }

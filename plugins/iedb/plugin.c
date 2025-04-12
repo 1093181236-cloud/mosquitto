@@ -206,6 +206,7 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 	url_register("role",roleCommand);
 	url_register("user",clientCommand);
 	url_register("group",groupCommand);
+
 	return MOSQ_ERR_SUCCESS;
 error:
 	free(iedb_dir);
@@ -240,6 +241,9 @@ int mosquitto_plugin_cleanup(void *user_data, struct mosquitto_opt *options, int
 	url_unregister("role");
 	url_unregister("user");
 	url_unregister("group");
+
+	url_unregister("cpuid");
+	url_unregister("licence");
 	if(plg_id){
 		mosquitto_callback_unregister(plg_id, MOSQ_EVT_BASIC_AUTH, mqtt_basic_auth_callback, NULL);
 		mosquitto_callback_unregister(plg_id, MOSQ_EVT_MESSAGE, mqtt_message_callback, NULL);
