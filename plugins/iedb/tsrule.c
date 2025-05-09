@@ -97,7 +97,13 @@ int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double valu
     	rule->aggClass->addContext(rule, rule->curSubContextPos);
     }
 
-    if ((otype == ORDER_ASC && timestamp > (rule->startCurrentTimeBucket + rule->bucketDuration)) || (otype == ORDER_DESC && timestamp < (rule->startCurrentTimeBucket - rule->bucketDuration))) {
+    int append = 1;
+    if ((otype == ORDER_ASC && timestamp >= (rule->startCurrentTimeBucket + rule->bucketDuration)) || (otype == ORDER_DESC && timestamp <= (rule->startCurrentTimeBucket - rule->bucketDuration))) {
+    	if(timestamp == (rule->startCurrentTimeBucket + rule->bucketDuration)){
+    		append = 0;
+    		rule->aggClass->appendValue(rule->subContext[rule->curSubContextPos], value, timestamp);
+    	}
+
     	ret = 1;
         if (rule->aggClass->addNextBucketFirstSample) {
             rule->aggClass->addNextBucketFirstSample(rule->aggContext, value, timestamp);
@@ -127,7 +133,7 @@ int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double valu
                 rule->aggContext, last_sample.value, last_sample.timestamp);
         }
         //rule->startCurrentTimeBucket = timestamp;
-        while((otype == ORDER_ASC && timestamp > (rule->startCurrentTimeBucket + rule->bucketDuration)) || (otype == ORDER_DESC && timestamp < (rule->startCurrentTimeBucket - rule->bucketDuration))){
+        while((otype == ORDER_ASC && timestamp >= (rule->startCurrentTimeBucket + rule->bucketDuration)) || (otype == ORDER_DESC && timestamp <= (rule->startCurrentTimeBucket - rule->bucketDuration))){
             int pos = ((rule->startCurrentTimeBucket - rule->startTime) % rule->bucketDuration) /rule->timestampAlignment;
             rule->aggClass->removeContext(rule, pos);
             rule->aggClass->resetContext(rule->subContext[pos]);
@@ -138,13 +144,16 @@ int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double valu
         }
     }
 
-    if(rule->curSubContextPos != curSubContextPos){
-    	//rule->aggClass->removeContext(rule, curSubContextPos);
-    	//rule->aggClass->resetContext(rule->subContext[curSubContextPos]);
-    	rule->curSubContextPos = curSubContextPos;
+    if(append){
+        if(rule->curSubContextPos != curSubContextPos){
+        	//rule->aggClass->removeContext(rule, curSubContextPos);
+        	//rule->aggClass->resetContext(rule->subContext[curSubContextPos]);
+        	rule->curSubContextPos = curSubContextPos;
+        }
+        //rule->aggClass->appendValue(rule->aggContext, value, timestamp);
+        rule->aggClass->appendValue(rule->subContext[rule->curSubContextPos], value, timestamp);
     }
-    //rule->aggClass->appendValue(rule->aggContext, value, timestamp);
-    rule->aggClass->appendValue(rule->subContext[rule->curSubContextPos], value, timestamp);
+
     return ret;
 }
 

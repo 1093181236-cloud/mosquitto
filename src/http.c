@@ -15,8 +15,9 @@
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 #include <openssl/rand.h>
+#include <openssl/md5.h>
 
-static char cpuid_str[64] = {0};
+static char cpuid_str[128] = {0};
 static time_t start_timestamp = 0;
 static time_t end_timestamp = 0;
 
@@ -102,9 +103,27 @@ int base64_decode(char *in, unsigned char **decoded, int *decoded_len)
 }
 
 void cpuid(void){
-    unsigned int eax=0, ebx=0, ecx=0, edx=0;
-    asm volatile("cpuid": "=a" (eax), "=b" (ebx), "=c" (ecx), "=d" (edx): "a" (0));
-    snprintf(cpuid_str,64,"%08X%08X%08X%08X", eax, ebx, ecx, edx);
+	int eax, ebx, ecx, edx;
+	eax = 1; // processor serial number
+	asm volatile("cpuid": "=a" (eax),"=b" (ebx),"=c" (ecx),"=d" (edx): "0" (eax), "2" (ecx));
+    snprintf(cpuid_str,64,"%08X%08XubuntuCpuId", edx, eax);
+
+    MD5_CTX ctx;
+    unsigned char digest[MD5_DIGEST_LENGTH];
+    if (!MD5_Init(&ctx)) {
+        fprintf(stderr, "MD5 init fail\n");
+        return;
+    }
+    MD5_Update(&ctx, cpuid_str, strlen(cpuid_str));
+    MD5_Final(digest, &ctx);
+
+    const char hex_chars[] = "0123456789abcdef";
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+    	cpuid_str[i * 2] = hex_chars[(digest[i] >> 4) & 0xF];
+    	cpuid_str[i * 2 + 1] = hex_chars[digest[i] & 0xF];
+    }
+    cpuid_str[MD5_DIGEST_LENGTH * 2] = '\0';
+    return;
 }
 
 int cpuidCommand(int argc,char** argv,cJSON** j_responses){
@@ -212,10 +231,10 @@ int parser_licence(char* lic,size_t lic_len ){
         	cpuid();
         char* pos = strchr(decrypted,'/');
         int cpuid_len = pos - (char*)decrypted;
-        if(pos == NULL || cpuid_len != strlen(cpuid_str) || strcmp(cpuid_str,decrypted)){
-        	//mosquitto_free(decrypted);
-        	//log__printf(NULL, MOSQ_LOG_WARNING, "cpuid mismatch!\n");
-        	//return 1;
+        if(pos == NULL || cpuid_len != strlen(cpuid_str) || strncmp(cpuid_str,decrypted,cpuid_len)){
+        	mosquitto_free(decrypted);
+        	log__printf(NULL, MOSQ_LOG_WARNING, "cpuid mismatch!\n");
+        	return 1;
         }
 
         char* start = pos+1;
