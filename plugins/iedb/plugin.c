@@ -65,6 +65,7 @@ int mqtt_basic_auth_callback(int event, void *event_data, void *userdata);
 int mqtt_message_callback(int event, void *event_data, void *userdata);
 int mqtt_tick_callback(int event, void *event_data, void *userdata);
 int dynsec__acl_check_callback(int event, void *event_data, void *userdata);
+int mqtt_disconnect_callback(int event, void *event_data, void *userdata);
 
 int tsAggRevQueryCommand(int argc,char** argv,cJSON** j_responses);
 int tsAggQueryCommand(int argc,char** argv,cJSON** j_responses);
@@ -91,6 +92,8 @@ int uploadCommand(int argc,char** argv,cJSON** j_responses);
 int newdeviceCommand(int argc,char** argv,cJSON** j_responses);
 int deldeviceCommand(int argc,char** argv,cJSON** j_responses);
 int tsBoolQueryCommand(int argc,char** argv,cJSON** j_responses);
+
+int mqttCommand(int argc,char** argv,cJSON** j_responses);
 
 int mosquitto_plugin_version(int supported_version_count, const int *supported_versions)
 {
@@ -173,16 +176,16 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 		goto error;
 	}
 
-/*	rc = mosquitto_callback_register(plg_id, MOSQ_EVT_ACL_CHECK, dynsec__acl_check_callback, NULL, NULL);
+	rc = mosquitto_callback_register(plg_id, MOSQ_EVT_DISCONNECT, mqtt_disconnect_callback, NULL, NULL);
 	if(rc == MOSQ_ERR_ALREADY_EXISTS){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "Error: Dynamic security plugin can only be loaded once.");
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Error: iedb plugin can only be loaded once.");
 		goto error;
 	}else if(rc == MOSQ_ERR_NOMEM){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "Error: Out of memory.");
 		goto error;
 	}else if(rc != MOSQ_ERR_SUCCESS){
 		goto error;
-	}*/
+	}
 
 	url_register("TSQUERY",tsQueryCommand);
 	url_register("TSREVQUERY",tsRevQueryCommand);
@@ -206,6 +209,8 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 	url_register("role",roleCommand);
 	url_register("user",clientCommand);
 	url_register("group",groupCommand);
+
+	url_register("mqtt",mqttCommand);
 
 	return MOSQ_ERR_SUCCESS;
 error:
@@ -244,10 +249,12 @@ int mosquitto_plugin_cleanup(void *user_data, struct mosquitto_opt *options, int
 
 	url_unregister("cpuid");
 	url_unregister("licence");
+	url_unregister("mqtt");
 	if(plg_id){
 		mosquitto_callback_unregister(plg_id, MOSQ_EVT_BASIC_AUTH, mqtt_basic_auth_callback, NULL);
 		mosquitto_callback_unregister(plg_id, MOSQ_EVT_MESSAGE, mqtt_message_callback, NULL);
 		mosquitto_callback_unregister(plg_id, MOSQ_EVT_TICK, mqtt_tick_callback, NULL);
+		mosquitto_callback_unregister(plg_id, MOSQ_EVT_DISCONNECT, mqtt_disconnect_callback, NULL);
 //		mosquitto_callback_unregister(plg_id, MOSQ_EVT_ACL_CHECK, dynsec__acl_check_callback, NULL);
 	}
 	db_close();

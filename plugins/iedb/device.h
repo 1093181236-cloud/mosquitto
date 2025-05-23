@@ -145,7 +145,7 @@ typedef struct _BOOLQFIELD{
 	timestamp_t onStartTime;
 	timestamp_t value;
 	field* pField;
-	struct _FLQFIELD* next;
+	struct _BOOLQFIELD* next;
 }BOOLQFIELD,*PBOOLQFIELD;
 
 typedef struct _DIFFQFIELD{

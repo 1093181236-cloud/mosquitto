@@ -278,4 +278,33 @@ BOOL数据聚合查询
 		1741661500,true,8,kk
 		1741661600,false,9,hg3
 		
-    第一行为字段名称，第一列为时间戳，其他列为字段值；        
+    第一行为字段名称，第一列为时间戳，其他列为字段值；  
+    
+    
+网关管理
+------------------
+
+查询网关状态：
+    mqtt/listClients   
+返回示例：        	
+		[{
+			"sn":"SN123",
+			"client_id":"a1dbcds5securemode=3,signmethod=hmacsha256,timestamp=1648110652|",
+			"name":"mygateway",
+			"online":false,
+			"online_timestamp":1747966869494
+		}]
+    
+设置网关名称：
+    mqtt/setClientName/{sn}/{name}
+    
+向网关发送消息：
+    mqtt/publishMessage
+		为post form请求，form参数content携带具体消息内容，格式为json，示例如下：
+		{
+			"topic":"/edge/property/{sn}/set",
+			"payload":"mymwssage1",
+			"qos":1
+		} 
+		其中qos为可选，默认为0；
+		        

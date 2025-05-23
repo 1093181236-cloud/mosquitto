@@ -20,6 +20,7 @@ OBJS=	\
 		grouplist.o \
 		clients.o \
 		clientlist.o \
+		mqtt.o \
 		sub_matches_sub.o \
 		lzf_c.o \
 		lzf_d.o \
@@ -84,6 +85,9 @@ groups.o : groups.c  dynamic_security.h
 	
 clients.o : clients.c  dynamic_security.h
 	${CROSS_COMPILE}${CC} $(LOCAL_CPPFLAGS) $(PLUGIN_CPPFLAGS) $(PLUGIN_CFLAGS) -c $< -o $@	
+	
+mqtt.o : mqtt.c
+	${CROSS_COMPILE}${CC} $(LOCAL_CPPFLAGS) $(PLUGIN_CPPFLAGS) $(PLUGIN_CFLAGS) -c $< -o $@		
 	
 rolelist.o : rolelist.c  dynamic_security.h
 	${CROSS_COMPILE}${CC} $(LOCAL_CPPFLAGS) $(PLUGIN_CPPFLAGS) $(PLUGIN_CFLAGS) -c $< -o $@	

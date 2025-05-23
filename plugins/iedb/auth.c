@@ -29,6 +29,8 @@ Contributors:
 #define SHA256_BLOCK_SIZE 32
 #define HASH_PASSWORD_LEN (SHA256_BLOCK_SIZE*2)
 
+void handle_client_auth(char* sn,char* clientid);
+
 static int memcmp_const(const void *a, const void *b, size_t len)
 {
 	size_t i;
@@ -133,25 +135,11 @@ int mqtt_basic_auth_callback(int event, void *event_data, void *userdata)
     char* username = strchr(ed->username, '|');
     if(username == NULL) return MOSQ_ERR_AUTH;
     username += 1;
-//	client = dynsec_clients__find(username);
-//	if(client){
-//		if(client->disabled){
-//			return MOSQ_ERR_AUTH;
-//		}
-		clientid = mosquitto_client_id(ed->client);
-/*		if(client->clientid){
-			if(clientid == NULL ||
-					strncmp(clientid,client->clientid, strlen(client->clientid)) ||
-					strncmp(clientid+strlen(client->clientid),"|securemode=3,signmethod=hmacsha256,timestamp=",46)){
-				return MOSQ_ERR_AUTH;
-			}
-		}*/
-		if(check_hmac_sha256(clientid,username,ed->password) == 0){
-			return MOSQ_ERR_SUCCESS;
-		}else{
-			return MOSQ_ERR_AUTH;
-		}
-//	}else{
-//		return MOSQ_ERR_AUTH;
-//	}
+    clientid = mosquitto_client_id(ed->client);
+	if(check_hmac_sha256(clientid,username,ed->password) == 0){
+		handle_client_auth(username,clientid);
+		return MOSQ_ERR_SUCCESS;
+	}else{
+		return MOSQ_ERR_AUTH;
+	}
 }

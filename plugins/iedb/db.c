@@ -35,6 +35,7 @@ int select_rule_callback(void *data, int argc, char **argv, char **azColName);
 int db_client_init(void);
 int db_group_init(void);
 int db_role_init(void);
+int db_mqtt_client_init(void);
 void save_cache(void){
 	char dbPathName[128];
 	snprintf(dbPathName,128,"%s/cache.data",iedb_dir);
@@ -341,6 +342,9 @@ int db_open(void){
 	if(rc != SQLITE_OK)
 		return -1;
 
+	rc = db_mqtt_client_init();
+	if(rc != SQLITE_OK)
+		return -1;
 
 	return 0;
 }

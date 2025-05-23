@@ -2347,7 +2347,7 @@ void tsDiffQuery(char** argv,cJSON *j_devices,timestamp_t period, timestamp_t st
     timestamp_t endSubQueryTime = startSubQueryTime + period;
 
     getFirstFieldValue(d,pFieldHead,startSubQueryTime,endSubQueryTime,ORDER_ASC);
-    while(endSubQueryTime < endQueryTime){
+    while(endSubQueryTime <= endQueryTime){
     	getFirstFieldValue(d,pFieldHead,startSubQueryTime,endSubQueryTime,ORDER_DESC);
 
         cJSON * j_row = NULL;
