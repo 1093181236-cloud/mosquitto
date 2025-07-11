@@ -137,7 +137,14 @@ int cpuidCommand(int argc,char** argv,cJSON** j_responses){
     cJSON *j_tree = cJSON_CreateObject();
     cJSON_AddStringToObject(j_tree,"cpuid",cpuid_str);
 
-	FILE *fptr = fopen("licence", "r");
+    char licence_filepath[256];
+    #ifdef WIN32
+    	snprintf(licence_filepathh, 255, "%s\\licence", db.config->persistence_location);
+    #else
+    	snprintf(licence_filepath, 255, "%s/licence", db.config->persistence_location);
+    #endif
+
+	FILE *fptr = fopen(licence_filepath, "r");
 	if(fptr == NULL){
 		cJSON_AddNullToObject(j_tree,"licence");
 	}else{
@@ -291,7 +298,13 @@ int licenceCommand(int argc,char** argv,cJSON** j_responses){
     	strftime(buf, 64, "%Y-%m-%dT%H:%M:%S", ti);
     	cJSON_AddStringToObject(j_tree,"end",buf);
 
-		FILE *fptr = fopen("licence", "w");
+        char licence_filepath[256];
+        #ifdef WIN32
+        	snprintf(licence_filepathh, 255, "%s\\licence", db.config->persistence_location);
+        #else
+        	snprintf(licence_filepath, 255, "%s/licence", db.config->persistence_location);
+        #endif
+		FILE *fptr = fopen(licence_filepath, "w");
 		if(fptr == NULL){
 			log__printf(NULL, MOSQ_LOG_WARNING, "Warning: failed to open licence file.");
 			return HTTP_STATUS_INTERNAL_SERVER_ERROR;
@@ -334,7 +347,13 @@ static char *decode_uri(const char *uri, size_t length, size_t *out_len, int alw
 
 int check_licence(void){
 	if(end_timestamp == 0){
-		FILE *fptr = fopen("licence", "r");
+        char licence_filepath[256];
+        #ifdef WIN32
+        	snprintf(licence_filepathh, 255, "%s\\licence", db.config->persistence_location);
+        #else
+        	snprintf(licence_filepath, 255, "%s/licence", db.config->persistence_location);
+        #endif
+		FILE *fptr = fopen(licence_filepath, "r");
 		if(fptr == NULL){
 			log__printf(NULL, MOSQ_LOG_WARNING, "Warning: failed to open licence file.");
 			return 1;

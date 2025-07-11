@@ -46,7 +46,7 @@ int db_delete_user_role_by_role(unsigned long long rid);
  * ################################################################ */
 
 struct dynsec__role *local_roles = NULL;
-extern sqlite3 *db;
+extern sqlite3 *sqlite3_db;
 unsigned long long max_role_id = 0;
 
 /* ################################################################
@@ -274,7 +274,7 @@ int db_role_init(void){
 			 "text_description TEXT," \
 	         "rolename TEXT NOT NULL UNIQUE);";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -290,14 +290,14 @@ int db_role_init(void){
 			 "PRIMARY KEY (rid,topic,acltype)," \
 			 "FOREIGN KEY(rid) REFERENCES role(id))WITHOUT ROWID;";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE acl,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
 		return rc;
 	}
 
-	rc = sqlite3_exec(db, "SELECT id,rolename,text_name,text_description FROM roles", select_role_callback, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, "SELECT id,rolename,text_name,text_description FROM roles", select_role_callback, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SELECT role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -308,7 +308,7 @@ int db_role_init(void){
 	HASH_ITER(hh, local_roles, role, role_tmp){
 		char sql[128];
 		snprintf(sql,128,"SELECT topic,acltype,priority,allow FROM acls WHERE rid=%lld",role->id);
-		rc = sqlite3_exec(db, sql, select_acl_callback, role, &zErrMsg);
+		rc = sqlite3_exec(sqlite3_db, sql, select_acl_callback, role, &zErrMsg);
 		if( rc != SQLITE_OK ){
 			mosquitto_log_printf(MOSQ_LOG_ERR, "SELECT acl,SQL error: %s\n", zErrMsg);
 			sqlite3_free(zErrMsg);
@@ -326,7 +326,7 @@ int db_insert_acl(unsigned long long rid,char* topic,char* acltype,int priority,
 	char sql[256];
 	snprintf(sql,255,"INSERT INTO acls (rid,topic,acltype,priority,allow) VALUES (%lld,%s,%s,%d,%d)",rid,topic,acltype,priority,allow);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_acl SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -376,7 +376,7 @@ int db_insert_role(struct dynsec__role* role){
 	else
 		snprintf(sql,255,"INSERT INTO roles (id,rolename,text_name,text_description) VALUES (%lld,%s,%s,%s)",role->id,role->rolename,role->text_name,role->text_description);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -391,7 +391,7 @@ int db_set_role(unsigned long long id, char* text_name, char* text_description){
 	char sql[256];
 	snprintf(sql,255,"UPDATE roles SET text_name = %s,text_description = %s WHERE id = %lld",text_name,text_description,id);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -405,7 +405,7 @@ int db_delete_role(unsigned long long id){
 	char sql[256];
 
 	snprintf(sql,255,"DELETE FROM user_role WHERE rid=%lld",id);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "DELETE user_role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -413,7 +413,7 @@ int db_delete_role(unsigned long long id){
 	}
 
 	snprintf(sql,255,"DELETE FROM group_role WHERE rid=%lld",id);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "DELETE group_role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -421,7 +421,7 @@ int db_delete_role(unsigned long long id){
 	}
 
 	snprintf(sql,255,"DELETE FROM acls WHERE rid=%lld",id);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "DELETE acls,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -429,7 +429,7 @@ int db_delete_role(unsigned long long id){
 	}
 
 	snprintf(sql,255,"DELETE FROM roles WHERE id=%lld",id);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "DELETE role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -449,7 +449,7 @@ int db_delete_acl(unsigned long long rid,char* topic,char* acltype){
 		snprintf(sql,255,"DELETE FROM acls WHERE rid=%lld AND acltype=%s",rid,acltype);
 	else
 		snprintf(sql,255,"DELETE FROM acls WHERE rid=%lld AND topic=%s and acltype=%s",rid,topic,acltype);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_acl,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);

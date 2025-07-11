@@ -534,7 +534,7 @@ char* cmd_select_format(char* file_name){
 		{.s = "css", .sz = 3, .ct = "text/css"},
 	};
 
-	size_t ext_len;
+	size_t ext_len=0;
 	char* ext = strrchr(file_name,'.');
 	if(ext){
 		ext += 1;

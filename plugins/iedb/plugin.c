@@ -94,6 +94,7 @@ int deldeviceCommand(int argc,char** argv,cJSON** j_responses);
 int tsBoolQueryCommand(int argc,char** argv,cJSON** j_responses);
 
 int mqttCommand(int argc,char** argv,cJSON** j_responses);
+int tagCommand(int argc,char** argv,cJSON** j_responses);
 
 int mosquitto_plugin_version(int supported_version_count, const int *supported_versions)
 {
@@ -190,7 +191,7 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 	url_register("TSQUERY",tsQueryCommand);
 	url_register("TSREVQUERY",tsRevQueryCommand);
 	url_register("TSAGGQUERY",tsAggQueryCommand);
-	url_register("TSAGGREVQUERY",tsAggRevQueryCommand);
+	url_register("TSREVAGGQUERY",tsAggRevQueryCommand);
 	url_register("TSFLQUERY",tsFLQueryCommand);
 	url_register("TSLASTQUERY",tsLastQueryCommand);
 	url_register("TSDIFFQUERY",tsDiffQueryCommand);
@@ -211,6 +212,7 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 	url_register("group",groupCommand);
 
 	url_register("mqtt",mqttCommand);
+	url_register("tag",tagCommand);
 
 	return MOSQ_ERR_SUCCESS;
 error:

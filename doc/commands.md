@@ -283,6 +283,12 @@ BOOL数据聚合查询
     
 网关管理
 ------------------
+查询cpuid:
+		/cpuid
+		
+设置licence:
+		/licence
+		post请求，form参数content为licence内容
 
 查询网关状态：
     mqtt/listClients   
@@ -307,4 +313,24 @@ BOOL数据聚合查询
 			"qos":1
 		} 
 		其中qos为可选，默认为0；
+		        
+		        
+标签管理
+------------------
+系统为设备默认创建的标签：GWSN，代表上传此设备数据的网关序列号
+
+查询某个标签下所有设备：
+    tag/listDevices/{tag name}/{tag value}   
+
+查询某个设备下所有标签：
+    tag/listTags/{device name}	
+    
+查询某个设备下某个标签的值：
+    tag/getTag/{device name}/{tag name}   
+
+为设备添加标签：
+    tag/addTag/{device name}/{tag name}/{tag value}
+    
+删除设备下某个标签：
+    tag/removeTag/{device name}/{tag name}               
 		        

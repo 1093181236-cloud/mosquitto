@@ -9,7 +9,7 @@
 #include "mosquitto_broker.h"
 #include "json_help.h"
 
-extern sqlite3 *db;
+extern sqlite3 *sqlite3_db;
 long long start_time;
 
 int db_mqtt_client_init(void){
@@ -25,7 +25,7 @@ int db_mqtt_client_init(void){
 			 "disconnected_time INTEGER," \
 	         "connected_time 	INTEGER NOT NULL)WITHOUT ROWID;";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE mqtt_client,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -37,14 +37,14 @@ int db_mqtt_client_init(void){
 
 int db_set_mqtt_client_connected(char* sn,char* client_id,long long ts){
     sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db, "INSERT INTO mqtt_client (sn,client_id,connected_time) VALUES (?1,?2,?3) ON CONFLICT(sn) DO UPDATE SET connected_time=?3,client_id=?2", -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(sqlite3_db, "INSERT INTO mqtt_client (sn,client_id,connected_time) VALUES (?1,?2,?3) ON CONFLICT(sn) DO UPDATE SET connected_time=?3,client_id=?2", -1, &stmt, NULL);
     if(rc == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, sn, -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, client_id, -1, SQLITE_STATIC);
         sqlite3_bind_int64(stmt, 3, ts);
         rc = sqlite3_step(stmt);
         if(rc != SQLITE_DONE) {
-        	mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_mqtt_client_connected SQL error: %s\n", sqlite3_errmsg(db));
+        	mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_mqtt_client_connected SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
         }
         sqlite3_finalize(stmt);
     }
@@ -54,13 +54,13 @@ int db_set_mqtt_client_connected(char* sn,char* client_id,long long ts){
 
 int db_set_mqtt_client_disconnected(char* sn,long long ts){
     sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db, "UPDATE mqtt_client SET disconnected_time = ?2 WHERE sn = ?1", -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(sqlite3_db, "UPDATE mqtt_client SET disconnected_time = ?2 WHERE sn = ?1", -1, &stmt, NULL);
     if(rc == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, sn, -1, SQLITE_STATIC);
         sqlite3_bind_int64(stmt, 2, ts);
         rc = sqlite3_step(stmt);
         if(rc != SQLITE_DONE) {
-        	mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_mqtt_client_disconnected SQL error: %s\n", sqlite3_errmsg(db));
+        	mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_mqtt_client_disconnected SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
         }
         sqlite3_finalize(stmt);
     }
@@ -70,13 +70,13 @@ int db_set_mqtt_client_disconnected(char* sn,long long ts){
 
 int db_set_mqtt_client_name(char* sn,char* text_name){
     sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db, "UPDATE mqtt_client SET text_name = ?2 WHERE sn = ?1", -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(sqlite3_db, "UPDATE mqtt_client SET text_name = ?2 WHERE sn = ?1", -1, &stmt, NULL);
     if(rc == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, sn, -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 2, text_name, -1, SQLITE_STATIC);
         rc = sqlite3_step(stmt);
         if(rc != SQLITE_DONE) {
-        	mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_mqtt_client_disconnected SQL error: %s\n", sqlite3_errmsg(db));
+        	mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_mqtt_client_disconnected SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
         }
         sqlite3_finalize(stmt);
     }
@@ -86,10 +86,10 @@ int db_set_mqtt_client_name(char* sn,char* text_name){
 
 int db_select_mqtt_client(cJSON* j_tree){
 	sqlite3_stmt *pSelectStmt;
-	int rc = sqlite3_prepare_v2(db,"SELECT sn,client_id,text_name,connected_time,disconnected_time  FROM mqtt_client",-1, &pSelectStmt, 0);
+	int rc = sqlite3_prepare_v2(sqlite3_db,"SELECT sn,client_id,text_name,connected_time,disconnected_time  FROM mqtt_client",-1, &pSelectStmt, 0);
 	if( rc != SQLITE_OK || pSelectStmt == NULL){
 		cJSON_AddStringToObject(j_tree,"error","sqlite error");
-		mosquitto_log_printf(MOSQ_LOG_ERR, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
@@ -172,7 +172,7 @@ int mqttCommand(int argc,char** argv,cJSON** j_responses){
 					sn[sn_len] = 0;
 
 				    sqlite3_stmt *stmt;
-				    if(sqlite3_prepare_v2(db, "SELECT client_id,connected_time,disconnected_time FROM mqtt_client WHERE sn = ? LIMIT 1", -1, &stmt, NULL) == SQLITE_OK) {
+				    if(sqlite3_prepare_v2(sqlite3_db, "SELECT client_id,connected_time,disconnected_time FROM mqtt_client WHERE sn = ? LIMIT 1", -1, &stmt, NULL) == SQLITE_OK) {
 				        sqlite3_bind_text(stmt, 1, sn, -1, SQLITE_STATIC);
 				        if(sqlite3_step(stmt) == SQLITE_ROW) {
 							char* client_id = sqlite3_column_text(stmt,0);

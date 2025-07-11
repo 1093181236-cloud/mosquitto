@@ -21,6 +21,7 @@ DISTFILES= \
 	snap/ \
 	src/ \
 	test/ \
+	www/ \
 	\
 	CMakeLists.txt \
 	CONTRIBUTING.md \
@@ -36,6 +37,7 @@ DISTFILES= \
 	libmosquitto.pc.in \
 	libmosquittopp.pc.in \
 	mosquitto.conf \
+	mosquitto-docker.conf \
 	NOTICE.md \
 	pskfile.example \
 	pwfile.example \
@@ -132,3 +134,12 @@ localdocker : reallyclean
 	rm -rf dockertmp/
 	cd docker/local && docker build . -t eclipse-mosquitto:local
 
+iotpdocker : reallyclean
+	set -e; for d in ${DISTDIRS}; do $(MAKE) -C $${d} dist; done
+	rm -rf dockertmp/
+	mkdir -p dockertmp/mosquitto-${VERSION}
+	cp -r ${DISTFILES} dockertmp/mosquitto-${VERSION}/
+	cd dockertmp/; tar -zcf mosq.tar.gz mosquitto-${VERSION}/
+	cp dockertmp/mosq.tar.gz docker/iotp
+	rm -rf dockertmp/
+	cd docker/iotp && docker build . -t luomi-iotp:${VERSION}

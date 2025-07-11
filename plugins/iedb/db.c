@@ -17,7 +17,7 @@
 #include "device.h"
 #include "rax.h"
 
-sqlite3 *db;
+sqlite3 *sqlite3_db;
 static sqlite3_stmt *pSelectTsIndexAscStmt;
 static sqlite3_stmt *pSelectTsIndexDescStmt;
 static sqlite3_stmt *pInsertTsIndexStmt;
@@ -36,6 +36,7 @@ int db_client_init(void);
 int db_group_init(void);
 int db_role_init(void);
 int db_mqtt_client_init(void);
+int db_tag_init(void);
 void save_cache(void){
 	char dbPathName[128];
 	snprintf(dbPathName,128,"%s/cache.data",iedb_dir);
@@ -160,7 +161,7 @@ int db_create_device(void){
 	         "id INTEGER PRIMARY KEY     NOT NULL," \
 	         "name           TEXT    NOT NULL);";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -180,7 +181,7 @@ int db_create_field(void){
 			 "PRIMARY KEY (did,id)," \
 	         "FOREIGN KEY(did) REFERENCES device(id))WITHOUT ROWID;";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -201,7 +202,7 @@ int db_create_tsindex(void){
 			 "PRIMARY KEY (did,start)," \
 	         "FOREIGN KEY(did) REFERENCES device(id))WITHOUT ROWID;";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -217,7 +218,7 @@ int db_create_rule(void){
 			 "dname 		TEXT      NOT NULL," \
 			 "func 			TEXT      NOT NULL);";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -229,9 +230,9 @@ int db_open(void){
 	char *zErrMsg = 0;
 	char dbPathName[128];
 	snprintf(dbPathName,127,"%s/iedb.db",iedb_dir);
-	int rc = sqlite3_open(dbPathName, &db);
+	int rc = sqlite3_open(dbPathName, &sqlite3_db);
 	if( rc ){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "Can't open database: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "Can't open database: %s\n", sqlite3_errmsg(sqlite3_db));
 	    return -1;
 	}
 
@@ -252,7 +253,7 @@ int db_open(void){
 		return -1;
 
 	devices = raxNew();
-	rc = sqlite3_exec(db, "SELECT name,id FROM device", select_device_callback, devices, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, "SELECT name,id FROM device", select_device_callback, devices, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -266,7 +267,7 @@ int db_open(void){
     	device *d = ri.data;
     	char sql[256];
     	snprintf(sql,255,"SELECT name,id,type,ctime FROM field WHERE did=%lld",d->id);
-    	rc = sqlite3_exec(db, sql, select_field_callback, d, &zErrMsg);
+    	rc = sqlite3_exec(sqlite3_db, sql, select_field_callback, d, &zErrMsg);
     	if( rc != SQLITE_OK ){
     		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", zErrMsg);
     		sqlite3_free(zErrMsg);
@@ -277,58 +278,58 @@ int db_open(void){
 
     load_cache();
 
-	rc = sqlite3_exec(db, "SELECT dname,func FROM rule", select_rule_callback, devices, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, "SELECT dname,func FROM rule", select_rule_callback, devices, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
 		return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"SELECT start,end,pos,max_fid,row_num FROM tsindex WHERE did=?1 AND (start BETWEEN ?2 AND ?3 OR end BETWEEN ?2 AND ?3 OR ?2 BETWEEN start AND end OR ?3 BETWEEN start AND end) ORDER BY start ASC",-1, &pSelectTsIndexAscStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"SELECT start,end,pos,max_fid,row_num FROM tsindex WHERE did=?1 AND (start BETWEEN ?2 AND ?3 OR end BETWEEN ?2 AND ?3 OR ?2 BETWEEN start AND end OR ?3 BETWEEN start AND end) ORDER BY start ASC",-1, &pSelectTsIndexAscStmt, 0);
 	if( rc != SQLITE_OK || pSelectTsIndexAscStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pSelectTsIndexStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pSelectTsIndexStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"SELECT start,end,pos,max_fid,row_num FROM tsindex WHERE did=?1 AND (start BETWEEN ?2 AND ?3 OR end BETWEEN ?2 AND ?3 OR ?2 BETWEEN start AND end OR ?3 BETWEEN start AND end) ORDER BY start DESC",-1, &pSelectTsIndexDescStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"SELECT start,end,pos,max_fid,row_num FROM tsindex WHERE did=?1 AND (start BETWEEN ?2 AND ?3 OR end BETWEEN ?2 AND ?3 OR ?2 BETWEEN start AND end OR ?3 BETWEEN start AND end) ORDER BY start DESC",-1, &pSelectTsIndexDescStmt, 0);
 	if( rc != SQLITE_OK || pSelectTsIndexDescStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pSelectTsIndexStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pSelectTsIndexStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"INSERT INTO tsindex (did,start,end,pos,max_fid,row_num) VALUES (?1,?2,?3, ?4, ?5, ?6)",-1, &pInsertTsIndexStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"INSERT INTO tsindex (did,start,end,pos,max_fid,row_num) VALUES (?1,?2,?3, ?4, ?5, ?6)",-1, &pInsertTsIndexStmt, 0);
 	if( rc != SQLITE_OK  || pInsertTsIndexStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertTsIndexStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertTsIndexStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"DELETE FROM tsindex WHERE end<?1",-1, &pDeleteTsIndexStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"DELETE FROM tsindex WHERE end<?1",-1, &pDeleteTsIndexStmt, 0);
 	if( rc != SQLITE_OK  || pDeleteTsIndexStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pDeleteTsIndexStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pDeleteTsIndexStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"INSERT INTO device (id,name) VALUES (?1, ?2)",-1, &pInsertDeviceStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"INSERT INTO device (id,name) VALUES (?1, ?2)",-1, &pInsertDeviceStmt, 0);
 	if( rc != SQLITE_OK  || pInsertDeviceStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertDeviceStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertDeviceStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"INSERT INTO field (id,name,did,ctime,type) VALUES (?1,?2,?3,?4,?5)",-1, &pInsertFieldStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"INSERT INTO field (id,name,did,ctime,type) VALUES (?1,?2,?3,?4,?5)",-1, &pInsertFieldStmt, 0);
 	if( rc != SQLITE_OK  || pInsertFieldStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertFieldStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertFieldStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"DELETE FROM rule WHERE dname=?1 AND func=?2",-1, &pDeleteRuleStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"DELETE FROM rule WHERE dname=?1 AND func=?2",-1, &pDeleteRuleStmt, 0);
 	if( rc != SQLITE_OK  || pDeleteRuleStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pDeleteRuleStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pDeleteRuleStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	rc = sqlite3_prepare_v2(db,"INSERT INTO rule (dname,func) VALUES (?1,?2)",-1, &pInsertRuleStmt, 0);
+	rc = sqlite3_prepare_v2(sqlite3_db,"INSERT INTO rule (dname,func) VALUES (?1,?2)",-1, &pInsertRuleStmt, 0);
 	if( rc != SQLITE_OK  || pInsertRuleStmt == NULL){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertRuleStmt error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "pInsertRuleStmt error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
@@ -346,6 +347,10 @@ int db_open(void){
 	if(rc != SQLITE_OK)
 		return -1;
 
+	rc = db_tag_init();
+	if(rc != SQLITE_OK)
+		return -1;
+
 	return 0;
 }
 
@@ -360,7 +365,7 @@ int db_close(void){
 	sqlite3_finalize(pInsertFieldStmt);
 	sqlite3_finalize(pInsertRuleStmt);
 	sqlite3_finalize(pDeleteRuleStmt);
-	sqlite3_close(db);
+	sqlite3_close(sqlite3_db);
 	return 0;
 }
 
@@ -369,7 +374,7 @@ int db_insert_device(char* device_name, long long id){
 	sqlite3_bind_text(pInsertDeviceStmt, 2, device_name, -1, SQLITE_STATIC);
 
 	if(sqlite3_step(pInsertDeviceStmt) != SQLITE_DONE){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
 	}
 	sqlite3_reset(pInsertDeviceStmt);
 	return 0;
@@ -383,7 +388,7 @@ int db_insert_field(char* field_name,long long id,long long did,timestamp_t ctim
 	sqlite3_bind_int64(pInsertFieldStmt, 5, type);
 
 	if(sqlite3_step(pInsertFieldStmt) != SQLITE_DONE){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
 	}
 	sqlite3_reset(pInsertFieldStmt);
 
@@ -394,7 +399,7 @@ int db_insert_rule(char* dname,char* func){
 	sqlite3_bind_text(pInsertDeviceStmt, 2, func, -1, SQLITE_STATIC);
 
 	if(sqlite3_step(pInsertRuleStmt) != SQLITE_DONE){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
 	}
 	sqlite3_reset(pInsertRuleStmt);
 	return 0;
@@ -406,7 +411,7 @@ int db_delete_rule(char* dname,char* func){
 	sqlite3_bind_text(pInsertDeviceStmt, 2, func, -1, SQLITE_STATIC);
 
 	if(sqlite3_step(pDeleteRuleStmt) != SQLITE_DONE){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
 	}
 	sqlite3_reset(pDeleteRuleStmt);
 	return 0;
@@ -418,7 +423,7 @@ int db_delete_device(long long id){
 	char sql[128];
 	snprintf(sql,255,"DELETE FROM device WHERE id=%lld",id);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_device SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -435,7 +440,7 @@ int db_insert_tsindex(long long did,timestamp_t start,timestamp_t end,size_t pos
 	sqlite3_bind_int64(pInsertTsIndexStmt, 6, row_num);
 
 	if(sqlite3_step(pInsertTsIndexStmt) != SQLITE_DONE){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
 	}
 	sqlite3_reset(pInsertTsIndexStmt);
 	return 0;
@@ -445,7 +450,7 @@ int db_delete_tsindex(timestamp_t end){
 	sqlite3_bind_int64(pDeleteTsIndexStmt, 1, end);
 
 	if(sqlite3_step(pDeleteTsIndexStmt) != SQLITE_DONE){
-		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(db));
+		mosquitto_log_printf(MOSQ_LOG_ERR, "SQL error: %s\n", sqlite3_errmsg(sqlite3_db));
 	}
 	sqlite3_reset(pDeleteTsIndexStmt);
 	return 0;
@@ -457,12 +462,114 @@ int db_delete_tsindex_by_device(long long did){
 	char sql[128];
 	snprintf(sql,255,"DELETE FROM tsindex WHERE did=%lld",did);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_tsindex_by_device SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
 	}
 	return rc;
+}
+
+int handle_block_asc(queryContext* qc,selectIndexCallback* cb,sqlite3_stmt *pStmt,long long start,long long end,long long pos,long long max_fid,long long row_num,long long src_start,long long src_end){
+	long long dest_start,dest_end;
+	long long src_start2,src_end2;
+	if(sqlite3_step(pStmt)==SQLITE_ROW){
+		long long next_start,next_end,next_pos,next_max_fid,next_row_num;
+		next_start = sqlite3_column_int64(pStmt,0);
+		next_end = sqlite3_column_int64(pStmt,1);
+		next_pos = sqlite3_column_int64(pStmt,2);
+		next_max_fid = sqlite3_column_int64(pStmt,3);
+		next_row_num = sqlite3_column_int64(pStmt,4);
+
+		if(next_start >= src_end){//no overlap
+			dest_start = src_start;
+			dest_end = src_end;
+			int rc = cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+			if(rc == 0){
+				src_start2 = next_start;
+				src_end2 = next_end;
+				handle_block_asc(qc,cb,pStmt,next_start,next_end,next_pos,next_max_fid,next_row_num,src_start2,src_end2);
+			}
+		}else if(next_end < src_end){//overlap
+			dest_start = src_start;
+			dest_end = src_end;
+			int rc = cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+			if(rc == 0){
+				src_start2 = next_start;
+				src_end2 = next_end;
+				handle_block_asc(qc,cb,pStmt,next_start,next_end,next_pos,next_max_fid,next_row_num,src_start2,src_end2);
+			}
+		}else{//contain
+			dest_start = src_start;
+			dest_end = next_start;
+			int rc = cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+			if(rc == 0){
+				dest_start = next_start;
+				dest_end = next_end;
+				rc = cb(qc,next_start,next_end,next_pos,next_max_fid,next_row_num,dest_start,dest_end);
+				if(rc == 0){
+					src_start2 = next_end;
+					src_end2 = src_end;
+					handle_block_asc(qc,cb,pStmt,start,end,pos,max_fid,row_num,src_start2,src_end2);
+				}
+			}
+		}
+	}else{
+		dest_start = src_start;
+		dest_end = src_end;
+		cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+	}
+}
+
+int handle_block_desc(queryContext* qc,selectIndexCallback* cb,sqlite3_stmt *pStmt,long long start,long long end,long long pos,long long max_fid,long long row_num,long long src_start,long long src_end){
+	long long dest_start,dest_end;
+	long long src_start2,src_end2;
+	if(sqlite3_step(pStmt)==SQLITE_ROW){
+		long long next_start,next_end,next_pos,next_max_fid,next_row_num;
+		next_start = sqlite3_column_int64(pStmt,0);
+		next_end = sqlite3_column_int64(pStmt,1);
+		next_pos = sqlite3_column_int64(pStmt,2);
+		next_max_fid = sqlite3_column_int64(pStmt,3);
+		next_row_num = sqlite3_column_int64(pStmt,4);
+
+		if(next_end <= src_start){//no overlap
+			dest_start = src_start;
+			dest_end = src_end;
+			int rc = cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+			if(rc == 0){
+				src_start2 = next_start;
+				src_end2 = next_end;
+				handle_block_desc(qc,cb,pStmt,next_start,next_end,next_pos,next_max_fid,next_row_num,src_start2,src_end2);
+			}
+		}else if(next_start < src_start){//overlap
+			dest_start = src_start;
+			dest_end = src_end;
+			int rc = cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+			if(rc == 0){
+				src_start2 = next_start;
+				src_end2 = next_end;
+				handle_block_desc(qc,cb,pStmt,next_start,next_end,next_pos,next_max_fid,next_row_num,src_start2,src_end2);
+			}
+		}else{//contain
+			dest_start = next_end;
+			dest_end = src_end;
+			int rc = cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+			if(rc == 0){
+				dest_start = next_start;
+				dest_end = next_end;
+				rc = cb(qc,next_start,next_end,next_pos,next_max_fid,next_row_num,dest_start,dest_end);
+				if(rc == 0){
+					src_start2 = src_start;
+					src_end2 = next_start;
+					handle_block_desc(qc,cb,pStmt,start,end,pos,max_fid,row_num,src_start2,src_end2);
+				}
+			}
+		}
+	}else{
+		dest_start = src_start;
+		dest_end = src_end;
+		cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
+	}
 }
 
 int db_select_tsindex(queryContext* qc,selectIndexCallback* cb){
@@ -475,16 +582,20 @@ int db_select_tsindex(queryContext* qc,selectIndexCallback* cb){
 	sqlite3_bind_int64(pStmt, 1, qc->d->id);
 	sqlite3_bind_int64(pStmt, 2, qc->startQueryTime);
 	sqlite3_bind_int64(pStmt, 3, qc->endQueryTime);
-	while( sqlite3_step(pStmt)==SQLITE_ROW ){
-		long long start = sqlite3_column_int64(pStmt,0);
-		long long end = sqlite3_column_int64(pStmt,1);
-		long long pos = sqlite3_column_int64(pStmt,2);
-		long long max_fid = sqlite3_column_int64(pStmt,3);
-		long long row_num = sqlite3_column_int64(pStmt,4);
-		int rc = cb(qc,start,end,pos,max_fid,row_num);
-		if(rc != 0)
-			break;
+	if( sqlite3_step(pStmt)==SQLITE_ROW ){
+		long long start,end,pos,max_fid,row_num;
+		start = sqlite3_column_int64(pStmt,0);
+		end = sqlite3_column_int64(pStmt,1);
+		pos = sqlite3_column_int64(pStmt,2);
+		max_fid = sqlite3_column_int64(pStmt,3);
+		row_num = sqlite3_column_int64(pStmt,4);
+
+		if(qc->otype == ORDER_ASC)
+			handle_block_asc(qc,cb,pStmt,start,end,pos,max_fid,row_num,start,end);
+		else
+			handle_block_desc(qc,cb,pStmt,start,end,pos,max_fid,row_num,start,end);
 	}
 	sqlite3_reset(pStmt);
+
 	return 0;
 }

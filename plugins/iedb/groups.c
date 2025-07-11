@@ -56,7 +56,7 @@ int db_delete_user_group(unsigned long long uid,unsigned long long gid);
  * ################################################################ */
 
 static struct dynsec__group *local_groups = NULL;
-extern sqlite3 *db;
+extern sqlite3 *sqlite3_db;
 unsigned long long max_group_id;
 
 /* ################################################################
@@ -193,7 +193,7 @@ int db_group_init(void){
 			 "text_description TEXT," \
 	         "groupname TEXT NOT NULL UNIQUE);";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE groups,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -208,14 +208,14 @@ int db_group_init(void){
 			 "FOREIGN KEY(gid) REFERENCES groups(id)," \
 			 "FOREIGN KEY(rid) REFERENCES role(id))WITHOUT ROWID;";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE group_role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
 		return rc;
 	}
 
-	rc = sqlite3_exec(db, "SELECT id,groupname,text_name,text_description FROM groups", select_group_callback, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, "SELECT id,groupname,text_name,text_description FROM groups", select_group_callback, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SELECT groups,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -227,7 +227,7 @@ int db_group_init(void){
 	HASH_ITER(hh, local_groups, group, group_tmp){
 		char buf[128];
 		snprintf(buf,128,"SELECT rolename,priority FROM group_role INNER JOIN role ON role.id=group_role.rid WHERE group_role.gid=%lld",group->id);
-		rc = sqlite3_exec(db, buf, select_group_role_callback, group, &zErrMsg);
+		rc = sqlite3_exec(sqlite3_db, buf, select_group_role_callback, group, &zErrMsg);
 		if( rc != SQLITE_OK ){
 			mosquitto_log_printf(MOSQ_LOG_ERR, "SELECT group_role,SQL error: %s\n", zErrMsg);
 			sqlite3_free(zErrMsg);
@@ -252,7 +252,7 @@ int db_insert_group(struct dynsec__group* group){
 		snprintf(sql,128,"INSERT INTO groups (id,groupname,text_name) VALUES (%lld,%s,%s,%s)",group->id,group->groupname,group->text_name);
 	else
 		snprintf(sql,128,"INSERT INTO groups (id,groupname,text_name,text_description) VALUES (%lld,%s,%s,%s)",group->id,group->groupname,group->text_name,group->text_description);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -265,7 +265,7 @@ int db_delete_group(struct dynsec__group* group){
 	int  rc;
 	char sql[128];
 	snprintf(sql,128,"DELETE FROM user_group WHERE gid=%lld",group->id);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "delete user_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -273,7 +273,7 @@ int db_delete_group(struct dynsec__group* group){
 	}
 
 	snprintf(sql,128,"DELETE FROM group_role WHERE gid=%lld",group->id);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "delete group_role SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -281,7 +281,7 @@ int db_delete_group(struct dynsec__group* group){
 	}
 
 	snprintf(sql,128,"DELETE FROM groups WHERE id=%lld",group->id);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -295,7 +295,7 @@ int db_insert_group_role(unsigned long long gid,unsigned long long rid,int prior
 	char sql[128];
 	snprintf(sql,128,"INSERT INTO group_role (gid,rid,priority) VALUES (%lld,%lld,%d)",gid,rid,priority);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_group_role SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -309,7 +309,7 @@ int db_delete_group_role(unsigned long long gid,unsigned long long rid){
 	char sql[128];
 	snprintf(sql,128,"DELETE FROM group_role WHERE gid=%lld AND rid=%lld",gid,rid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_group_role SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -323,7 +323,7 @@ int db_delete_group_role_by_group(unsigned long long gid){
 	char sql[128];
 	snprintf(sql,128,"DELETE FROM group_role WHERE gid=%lld",gid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_group_role_by_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -337,7 +337,7 @@ int db_delete_group_role_by_role(unsigned long long rid){
 	char sql[128];
 	snprintf(sql,128,"DELETE FROM group_role WHERE rid=%lld",rid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_group_role_by_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -350,7 +350,7 @@ int db_set_group(unsigned long long id, char* text_name, char* text_description)
 	char sql[256];
 	snprintf(sql,255,"UPDATE groups SET text_name = %s,text_description = %s WHERE id = %lld",text_name,text_description,id);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_set_groups,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);

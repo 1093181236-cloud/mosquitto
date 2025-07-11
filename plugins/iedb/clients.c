@@ -44,7 +44,7 @@ int dynsec_groups__remove_client(const char *username, const char *groupname, bo
  * ################################################################ */
 
 static struct dynsec__client *local_clients = NULL;
-extern sqlite3 *db;
+extern sqlite3 *sqlite3_db;
 unsigned long long max_user_id;
 
 /* ################################################################
@@ -212,7 +212,7 @@ int db_client_init(void){
 			 "disabled BOOLEAN," \
 	         "username TEXT NOT NULL UNIQUE);";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE user,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -227,7 +227,7 @@ int db_client_init(void){
 			 "FOREIGN KEY(uid) REFERENCES users(id)," \
 			 "FOREIGN KEY(gid) REFERENCES groups(id))WITHOUT ROWID;";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE user_group,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -242,14 +242,14 @@ int db_client_init(void){
 			 "FOREIGN KEY(uid) REFERENCES users(id)," \
 			 "FOREIGN KEY(rid) REFERENCES roles(id))WITHOUT ROWID;";
 
-	rc = sqlite3_exec(db, sql, NULL, 0, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, 0, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "CREATE TABLE user_role,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
 		return rc;
 	}
 
-	rc = sqlite3_exec(db, "SELECT id,username,clientid,text_name,text_description,disabled FROM users", select_user_callback, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, "SELECT id,username,clientid,text_name,text_description,disabled FROM users", select_user_callback, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "SELECT user,SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -261,7 +261,7 @@ int db_client_init(void){
 	HASH_ITER(hh, local_clients, client, client_tmp){
 		char buf[128];
 		snprintf(buf,128,"SELECT rolename,priority FROM user_role INNER JOIN roles ON roles.id=user_role.rid WHERE user_role.uid=%lld",client->id);
-		rc = sqlite3_exec(db, buf, select_user_role_callback, client, &zErrMsg);
+		rc = sqlite3_exec(sqlite3_db, buf, select_user_role_callback, client, &zErrMsg);
 		if( rc != SQLITE_OK ){
 			mosquitto_log_printf(MOSQ_LOG_ERR, "SELECT user_role,SQL error: %s\n", zErrMsg);
 			sqlite3_free(zErrMsg);
@@ -269,7 +269,7 @@ int db_client_init(void){
 		}
 
 		snprintf(buf,128,"SELECT groupname,priority FROM user_group INNER JOIN groups ON groups.id=user_group.gid WHERE user_group.uid=%lld",client->id);
-		rc = sqlite3_exec(db, buf, select_user_group_callback, client, &zErrMsg);
+		rc = sqlite3_exec(sqlite3_db, buf, select_user_group_callback, client, &zErrMsg);
 		if( rc != SQLITE_OK ){
 			mosquitto_log_printf(MOSQ_LOG_ERR, "SELECT user_group,SQL error: %s\n", zErrMsg);
 			sqlite3_free(zErrMsg);
@@ -299,7 +299,7 @@ int db_insert_user(struct dynsec__client *client){
 		snprintf(sql,255,"INSERT INTO users (id,username,disabled,clientid,text_name) VALUES (%lld,%s,%d,%s,%s)",client->id,client->username,client->disabled,client->clientid,client->text_name);
 	else
 		snprintf(sql,255,"INSERT INTO users (id,username,disabled,clientid,text_name,text_description) VALUES (%lld,%s,%d,%s,%s,%s)",client->id,client->username,client->disabled,client->clientid,client->text_name,client->text_description);
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_user SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -313,7 +313,7 @@ int db_delete_user(unsigned long long uid){
 	char sql[256];
 	snprintf(sql,255,"DELETE FROM users WHERE uid=%lld",uid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_user SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -327,7 +327,7 @@ int db_disable_user(unsigned long long uid,bool disabled){
 	char sql[256];
 	snprintf(sql,255,"UPDATE users SET disabled = %d WHERE id = %lld",disabled,uid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_disable_user SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -357,7 +357,7 @@ int db_set_user(unsigned long long uid,char* clientid,char* text_name,char* text
 	else
 		snprintf(sql,255,"UPDATE users SET clientid = %s, text_name = %s text_description = %s, WHERE id = %lld",clientid,text_name,text_description,uid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_disable_user SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -371,7 +371,7 @@ int db_insert_user_group(unsigned long long uid,unsigned long long gid,int prior
 	char sql[256];
 	snprintf(sql,255,"INSERT INTO user_group (uid,gid,priority) VALUES (%lld,%lld,%d)",uid,gid,priority);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_user_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -385,7 +385,7 @@ int db_delete_user_group(unsigned long long uid,unsigned long long gid){
 	char sql[256];
 	snprintf(sql,255,"DELETE FROM user_group WHERE uid=%lld AND gid=%lld",uid,gid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_user_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -399,7 +399,7 @@ int db_delete_user_group_by_group(unsigned long long gid){
 	char sql[256];
 	snprintf(sql,255,"DELETE FROM user_group WHERE gid=%lld",gid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_user_group SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -413,7 +413,7 @@ int db_insert_user_role(unsigned long long uid,unsigned long long rid,int priori
 	char sql[256];
 	snprintf(sql,255,"INSERT INTO user_role (uid,rid,priority) VALUES (%lld,%lld,%d)",uid,rid,priority);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_insert_user_role SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -427,7 +427,7 @@ int db_delete_user_role(unsigned long long uid,unsigned long long rid){
 	char sql[256];
 	snprintf(sql,255,"DELETE FROM user_role WHERE uid=%lld AND rid=%lld",uid,rid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_user_role SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);
@@ -441,7 +441,7 @@ int db_delete_user_role_by_role(unsigned long long rid){
 	char sql[256];
 	snprintf(sql,255,"DELETE FROM user_role WHERE rid=%lld",rid);
 
-	rc = sqlite3_exec(db, sql, NULL, NULL, &zErrMsg);
+	rc = sqlite3_exec(sqlite3_db, sql, NULL, NULL, &zErrMsg);
 	if( rc != SQLITE_OK ){
 		mosquitto_log_printf(MOSQ_LOG_ERR, "db_delete_user_role SQL error: %s\n", zErrMsg);
 		sqlite3_free(zErrMsg);

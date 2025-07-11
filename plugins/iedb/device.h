@@ -79,6 +79,7 @@ typedef struct device {
 	long long id;
     rax *fields;
     long long field_max_id;
+    char* mqtt_username;
 
     timestamp_t lastTimestamp;
     int curTimestampPos;
@@ -116,6 +117,23 @@ typedef struct _QFIELD{
 	int isFirstRow;
 	int haveCache;
 }QFIELD,*PQFIELD;
+
+typedef struct _TSINDEX{
+	long long start;
+	long long end;
+	long long pos;
+	long long max_fid;
+	long long row_num;
+	struct _TSINDEX *prev, *next;
+}TSINDEX,*PTSINDEX;
+
+typedef struct _TSINDEX2{
+	TSINDEX* ti;
+	long long start;
+	long long end;
+
+	struct _TSINDEX2 *prev, *next;
+}TSINDEX2,*PTSINDEX2;
 
 typedef struct _queryContext{
 	cJSON *j_device;

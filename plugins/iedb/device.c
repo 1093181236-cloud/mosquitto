@@ -35,6 +35,7 @@ static const char* fieldTypeName[] = {"BOOL","TING_INT","SMALL_INT","INT","BIG_I
 static int fieldTypeBitSize[] = {0,sizeof(char),sizeof(short),sizeof(int),sizeof(int64_t),sizeof(float),sizeof(double),MAX_FIELD_STRING_LEN,0};
 
 static TsdbSaveContext *saveContext = NULL;
+struct mosquitto *curMqttclient = NULL;
 
 int db_insert_tsindex(long long did,timestamp_t start,timestamp_t end,size_t pos,long long field_max_id,long long row_num);
 int db_insert_field(char* field_name,long long id,long long did,timestamp_t ctime,int type);
@@ -61,6 +62,7 @@ device *deviceNew(long long id) {
 	d->curTimestampPos = -1;
 	d->lastTimestamp = 0;
 	d->field_max_id = 0;
+	d->mqtt_username = NULL;
 
     return d;
 }
@@ -424,12 +426,36 @@ int tsAddGenericCommand(char* dn, timestamp_t t,cJSON *pps) {
         return -1;
     }
 
+	const char* username = mosquitto_client_username(curMqttclient);
+	size_t name_len = strlen(username)/2;
+	int need_set_tag = 0;
+
     /* Lookup the device at key. */
     device *d = raxFind(devices,(unsigned char*)dn,strlen(dn));
     if (d == raxNotFound){
     	d = deviceNew(++device_max_id);
     	raxInsert(devices,(unsigned char*)dn,strlen(dn),d,NULL);
     	db_insert_device(dn,device_max_id);
+
+    	need_set_tag = 1;
+    	d->mqtt_username = username;
+    }else{
+    	if(d->mqtt_username == NULL){
+    		need_set_tag = 1;
+        	d->mqtt_username = username;
+    	}else if(d->mqtt_username != username){
+    		if(strcmp(d->mqtt_username,username) != 0){
+    			need_set_tag = 1;
+    		}
+    		d->mqtt_username = username;
+    	}
+    }
+    if(need_set_tag){
+    	char* sn = mosquitto_malloc(name_len+1);
+    	memcpy(sn,username,name_len);
+    	sn[name_len] = 0;
+    	db_set_device_tag(d->id,"GWSN",sn);
+    	mosquitto_free(sn);
     }
 
     /* Append using the low level function and return the ID. */
@@ -439,6 +465,8 @@ int tsAddGenericCommand(char* dn, timestamp_t t,cJSON *pps) {
 
 int mqtt_message_callback(int event, void *event_data, void *userdata){
 	struct mosquitto_evt_message *ed = event_data;
+	curMqttclient = ed->client;
+
 	size_t topic_len = strlen(ed->topic);
 	const char* username = mosquitto_client_username(ed->client);
 	size_t name_len = strlen(username)/2;
@@ -708,7 +736,7 @@ long long replyFieldsQuery(cJSON *j_row,timestamp_t curTimestamp,QFIELD* pFieldH
 	return field_len;
 }
 
-size_t queryCahce(queryContext* qc,timestamp_t* curTimestamps,size_t curTotalSamples){//2018-06-01 08:00:00.000
+size_t queryCahce(queryContext* qc,timestamp_t* curTimestamps,size_t curTotalSamples, long long dest_start,long long dest_end){//2018-06-01 08:00:00.000
 	int start,end,step;
 	if(qc->otype == ORDER_ASC){
 		start = 0;
@@ -721,6 +749,9 @@ size_t queryCahce(queryContext* qc,timestamp_t* curTimestamps,size_t curTotalSam
 	}
 
 	for(int i = start; i != end; i+=step){
+		if(curTimestamps[i] > dest_end || curTimestamps[i] < dest_start)
+			continue;
+
 		if(curTimestamps[i] < qc->startQueryTime){
 			if(qc->otype == ORDER_DESC)
 				break;
@@ -760,7 +791,7 @@ size_t queryCahce(queryContext* qc,timestamp_t* curTimestamps,size_t curTotalSam
 	return qc->samplelen;
 }
 
-int select_index_callback(void *data, long long start,long long end,long long pos,long long max_fid,long long row_num){
+int select_index_callback(void *data, long long start,long long end,long long pos,long long max_fid,long long row_num, long long dest_start,long long dest_end){
 	queryContext* qc = data;
 	assert(max_fid <= qc->d->field_max_id);
 
@@ -827,7 +858,7 @@ int select_index_callback(void *data, long long start,long long end,long long po
 		pFieldHeadTmp = pFieldHeadTmp->next;
 	}
 
-	queryCahce(qc,qc->timestamp_output,row_num);
+	queryCahce(qc,qc->timestamp_output,row_num,dest_start,dest_end);
 	pFieldHeadTmp = qc->pFieldHead;
 	while(pFieldHeadTmp){
 		pFieldHeadTmp->haveCache = 0;
@@ -851,7 +882,7 @@ void deviceReplyWithRange(queryContext* qc){
 			}
 			pFieldHeadTmp = pFieldHeadTmp->next;
 		}
-		queryCahce(qc,qc->d->timestamps,qc->d->curTimestampPos+1);
+		queryCahce(qc,qc->d->timestamps,qc->d->curTimestampPos+1,qc->startQueryTime,qc->endQueryTime);
 		if(qc->count > 0 && qc->samplelen >= qc->count){
 			return;
 		}
@@ -886,7 +917,7 @@ void deviceReplyWithRange(queryContext* qc){
 			}
 			pFieldHeadTmp = pFieldHeadTmp->next;
 		}
-		queryCahce(qc,qc->d->timestamps,qc->d->curTimestampPos+1);
+		queryCahce(qc,qc->d->timestamps,qc->d->curTimestampPos+1,qc->startQueryTime,qc->endQueryTime);
 	}
 }
 
@@ -1119,7 +1150,7 @@ int tsAggRevQueryCommand(int argc,char** argv,cJSON** j_responses) {
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
-int addReplyCacheFL(cJSON *j_fields,field *f,cache *pCache,timestamp_t* curTimestamps,size_t curTotalSamples,timestamp_t startQueryTime,timestamp_t endQueryTime,ORDER_TYPE otype){
+int addReplyCacheFL(cJSON *j_fields,field *f,cache *pCache,timestamp_t* curTimestamps,size_t curTotalSamples,timestamp_t startQueryTime,timestamp_t endQueryTime,ORDER_TYPE otype, long long dest_start,long long dest_end){
 	int start,end,step;
 	if(otype == ORDER_ASC){
 		start = 0;
@@ -1131,6 +1162,9 @@ int addReplyCacheFL(cJSON *j_fields,field *f,cache *pCache,timestamp_t* curTimes
 		step = -1;
 	}
 	for(int rowId = start; rowId != end; rowId+=step){
+		if(curTimestamps[rowId] > dest_end || curTimestamps[rowId] < dest_start)
+			continue;
+
 		if(curTimestamps[rowId] < startQueryTime){
 			if(otype == ORDER_ASC)
 				continue;
@@ -1181,7 +1215,7 @@ int addReplyCacheFL(cJSON *j_fields,field *f,cache *pCache,timestamp_t* curTimes
 	return 0;
 }
 
-int select_index_callback_fl(void *data, unsigned long long start,unsigned long long end,unsigned long long pos,unsigned long long max_fid,unsigned long long row_num){
+int select_index_callback_fl(void *data, unsigned long long start,unsigned long long end,unsigned long long pos,unsigned long long max_fid,unsigned long long row_num, long long dest_start,long long dest_end){
 	queryContext* qc = data;
 
 	int timestamp_output_size = sizeof(timestamp_t)*CACHE_ROW_NUM;
@@ -1241,7 +1275,7 @@ int select_index_callback_fl(void *data, unsigned long long start,unsigned long 
 			}
 			lzf_decompress(qc->input, findex->dataLength,curCache,cache_size);
 
-			if(addReplyCacheFL(pFieldHeadTmp->j_field,f,curCache,qc->timestamp_output,row_num,qc->startQueryTime,qc->endQueryTime,qc->otype) == 0){
+			if(addReplyCacheFL(pFieldHeadTmp->j_field,f,curCache,qc->timestamp_output,row_num,qc->startQueryTime,qc->endQueryTime,qc->otype,dest_start,dest_end) == 0){
 				allFound = 0;
 			}
 		}
@@ -1262,7 +1296,7 @@ void addReplyFiledFL(device *d,FLQFIELD* pFieldHead,timestamp_t startQueryTime,t
 		FLQFIELD* pFieldHeadTmp = pFieldHead;
 		while(pFieldHeadTmp){
 			field* f = pFieldHeadTmp->pField;
-			if(addReplyCacheFL(pFieldHeadTmp->j_field,f,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype) == 0)
+			if(addReplyCacheFL(pFieldHeadTmp->j_field,f,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype,startQueryTime,endQueryTime) == 0)
 				allFound = 0;
 			pFieldHeadTmp = pFieldHeadTmp->next;
 		}
@@ -1304,7 +1338,7 @@ void addReplyFiledFL(device *d,FLQFIELD* pFieldHead,timestamp_t startQueryTime,t
 			}
 
 			field* f = pFieldHeadTmp->pField;
-			addReplyCacheFL(pFieldHeadTmp->j_field,f,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype);
+			addReplyCacheFL(pFieldHeadTmp->j_field,f,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype,startQueryTime,endQueryTime);
 			pFieldHeadTmp = pFieldHeadTmp->next;
 		}
 	}
@@ -2050,7 +2084,7 @@ int tsAllDevicesFiledsCommand(int argc,char** argv,cJSON** j_responses){
     return 0;
 }
 
-int addReplyCacheDiff(DIFFQFIELD *pFieldHead,cache *pCache,timestamp_t* curTimestamps,size_t curTotalSamples,timestamp_t startQueryTime,timestamp_t endQueryTime,ORDER_TYPE otype){
+int addReplyCacheDiff(DIFFQFIELD *pFieldHead,cache *pCache,timestamp_t* curTimestamps,size_t curTotalSamples,timestamp_t startQueryTime,timestamp_t endQueryTime,ORDER_TYPE otype, long long dest_start,long long dest_end){
 	field *f = pFieldHead->pField;
 	int start,end,step;
 	if(otype == ORDER_ASC){
@@ -2063,6 +2097,8 @@ int addReplyCacheDiff(DIFFQFIELD *pFieldHead,cache *pCache,timestamp_t* curTimes
 		step = -1;
 	}
 	for(int rowId = start; rowId != end; rowId+=step){
+		if(curTimestamps[rowId] > dest_end || curTimestamps[rowId] < dest_start)
+			continue;
 		if(curTimestamps[rowId] < startQueryTime){
 			if(otype == ORDER_ASC)
 				continue;
@@ -2135,7 +2171,7 @@ int addReplyCacheDiff(DIFFQFIELD *pFieldHead,cache *pCache,timestamp_t* curTimes
 	return 0;
 }
 
-int select_index_callback_diff(void *data, unsigned long long start,unsigned long long end,unsigned long long pos,unsigned long long max_fid,unsigned long long row_num){
+int select_index_callback_diff(void *data, unsigned long long start,unsigned long long end,unsigned long long pos,unsigned long long max_fid,unsigned long long row_num, long long dest_start,long long dest_end){
 	queryContext* qc = data;
 
 	int timestamp_output_size = sizeof(timestamp_t)*CACHE_ROW_NUM;
@@ -2198,7 +2234,7 @@ int select_index_callback_diff(void *data, unsigned long long start,unsigned lon
 			}
 			lzf_decompress(qc->input, findex->dataLength,curCache,cache_size);
 
-			if(addReplyCacheDiff(pFieldHeadTmp,curCache,qc->timestamp_output,row_num,qc->startQueryTime,qc->endQueryTime,qc->otype) == 0){
+			if(addReplyCacheDiff(pFieldHeadTmp,curCache,qc->timestamp_output,row_num,qc->startQueryTime,qc->endQueryTime,qc->otype,dest_start,dest_end) == 0){
 				allFound = 0;
 			}
 		}
@@ -2228,7 +2264,7 @@ void getFirstFieldValue(device *d,DIFFQFIELD* pFieldHead,timestamp_t startQueryT
 		pFieldHeadTmp = pFieldHead;
 		while(pFieldHeadTmp){
 			field* f = pFieldHeadTmp->pField;
-			if(addReplyCacheDiff(pFieldHeadTmp,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype) == 0)
+			if(addReplyCacheDiff(pFieldHeadTmp,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype,startQueryTime,endQueryTime) == 0)
 				allFound = 0;
 			pFieldHeadTmp = pFieldHeadTmp->next;
 		}
@@ -2269,7 +2305,7 @@ void getFirstFieldValue(device *d,DIFFQFIELD* pFieldHead,timestamp_t startQueryT
 			}
 
 			field* f = pFieldHeadTmp->pField;
-			addReplyCacheDiff(pFieldHeadTmp,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype);
+			addReplyCacheDiff(pFieldHeadTmp,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,otype,startQueryTime,endQueryTime);
 			pFieldHeadTmp = pFieldHeadTmp->next;
 		}
 	}
@@ -2742,12 +2778,15 @@ int uploadCommand(int argc,char** argv,cJSON** j_responses){
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-int addReplyCacheBool(BOOLQFIELD *f,cache *pCache,timestamp_t* curTimestamps,size_t curTotalSamples,timestamp_t startQueryTime,timestamp_t endQueryTime){
+int addReplyCacheBool(BOOLQFIELD *f,cache *pCache,timestamp_t* curTimestamps,size_t curTotalSamples,timestamp_t startQueryTime,timestamp_t endQueryTime, long long dest_start,long long dest_end){
 	int start,end,step;
 	start = 0;
 	end = curTotalSamples;
 	step = 1;
 	for(int rowId = start; rowId != end; rowId+=step){
+		if(curTimestamps[rowId] > dest_end || curTimestamps[rowId] < dest_start)
+			continue;
+
 		if(curTimestamps[rowId] < startQueryTime){
 			continue;
 		}
@@ -2774,7 +2813,7 @@ int addReplyCacheBool(BOOLQFIELD *f,cache *pCache,timestamp_t* curTimestamps,siz
 	return 0;
 }
 
-int select_index_callback_bool(void *data, unsigned long long start,unsigned long long end,unsigned long long pos,unsigned long long max_fid,unsigned long long row_num){
+int select_index_callback_bool(void *data, unsigned long long start,unsigned long long end,unsigned long long pos,unsigned long long max_fid,unsigned long long row_num, long long dest_start,long long dest_end){
 	queryContext* qc = data;
 
 	int timestamp_output_size = sizeof(timestamp_t)*CACHE_ROW_NUM;
@@ -2828,7 +2867,7 @@ int select_index_callback_bool(void *data, unsigned long long start,unsigned lon
 			}
 			lzf_decompress(qc->input, findex->dataLength,curCache,cache_size);
 
-			addReplyCacheBool(pFieldHeadTmp,curCache,qc->timestamp_output,row_num,qc->startQueryTime,qc->endQueryTime);
+			addReplyCacheBool(pFieldHeadTmp,curCache,qc->timestamp_output,row_num,qc->startQueryTime,qc->endQueryTime, dest_start,dest_end);
 		}
 		pFieldHeadTmp = pFieldHeadTmp->next;
 	}
@@ -2865,7 +2904,7 @@ void addReplyFiledBOOL(device *d,BOOLQFIELD* pFieldHead,timestamp_t startQueryTi
 	BOOLQFIELD* pFieldHeadTmp = pFieldHead;
 	while(pFieldHeadTmp){
 		field* f = pFieldHeadTmp->pField;
-		addReplyCacheBool(pFieldHeadTmp,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime);
+		addReplyCacheBool(pFieldHeadTmp,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,startQueryTime,endQueryTime);
 		pFieldHeadTmp = pFieldHeadTmp->next;
 	}
 }
