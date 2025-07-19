@@ -319,8 +319,10 @@ BOOL数据聚合查询
 ------------------
 系统为设备默认创建的标签：GWSN，代表上传此设备数据的网关序列号
 
-查询某个标签下所有设备：
-    tag/listDevices/{tag name}/{tag value}   
+查询有某个标签值的所有设备：
+    tag/listDevices/{tag name}/{tag value}/[limit]/[offset]   
+查询有某个标签的所有设备：
+    tag/listDevicesByName/{tag name}/[limit]/[offset]    
 
 查询某个设备下所有标签：
     tag/listTags/{device name}	

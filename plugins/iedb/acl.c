@@ -15,7 +15,6 @@ SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 Contributors:
    Roger Light - initial implementation and documentation.
 */
-
 #include "config.h"
 
 #include "dynamic_security.h"

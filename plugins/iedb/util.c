@@ -27,7 +27,15 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#ifndef WIN32
 #include <sys/time.h>
+#include <time.h>
+#else
+#include <process.h>
+#include <winsock2.h>
+#define snprintf sprintf_s
+#endif
 
 int string2ll(const char *s, size_t slen, long long *value) {
     const char *p = s;
@@ -261,25 +269,36 @@ int stringmatch(const char *pattern, const char *string, int nocase) {
 /* Test bit 'pos' in a generic bitmap. Return 1 if the bit is set,
  * otherwise 0. */
 int bitmapTestBit(unsigned char *bitmap, int pos) {
-    off_t byte = pos/8;
+    int byte = pos/8;
     int bit = pos&7;
     return (bitmap[byte] & (1<<bit)) != 0;
 }
 
 /* Set the bit at position 'pos' in a bitmap. */
 void bitmapSetBit(unsigned char *bitmap, int pos) {
-    off_t byte = pos/8;
+    int byte = pos/8;
     int bit = pos&7;
     bitmap[byte] |= 1<<bit;
 }
 
 /* Clear the bit at position 'pos' in a bitmap. */
 void bitmapClearBit(unsigned char *bitmap, int pos) {
-    off_t byte = pos/8;
+    int byte = pos/8;
     int bit = pos&7;
     bitmap[byte] &= ~(1<<bit);
 }
 
+#ifdef WIN32
+long long ustime(void) {
+    long long ust;
+    SYSTEMTIME st;
+	GetSystemTime(&st);
+
+	ust = ((long long)st.wSecond)*1000000;
+	ust += st.wMilliseconds*1000;
+	return ust;
+}
+#else
 /* Return the UNIX time in microseconds */
 long long ustime(void) {
     struct timeval tv;
@@ -290,6 +309,7 @@ long long ustime(void) {
     ust += tv.tv_usec;
     return ust;
 }
+#endif
 
 /* Return the UNIX time in milliseconds */
 long long mstime(void) {

@@ -840,6 +840,7 @@ void handle_sighup(int signal);
  * Window service and signal related functions
  * ============================================================ */
 #if defined(WIN32) || defined(__CYGWIN__)
+
 void service_install(void);
 void service_uninstall(void);
 void service_run(void);

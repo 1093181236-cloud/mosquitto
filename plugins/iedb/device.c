@@ -7,13 +7,11 @@
 #include "util.h"
 
 #include <ctype.h>
-#include <sys/param.h>
-#include <dirent.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h>
+
 #include <assert.h>
 #include <inttypes.h>
 #include <libwebsockets.h>
@@ -22,6 +20,17 @@
 #include "mosquitto.h"
 #include "mosquitto_plugin.h"
 #include "mqtt_protocol.h"
+
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#define stat _stat
+#define strcasecmp _stricmp
+#else
+#include <dirent.h>
+#include <sys/param.h>
+#include <unistd.h>
+#endif
 
 extern rax* devices;
 static unsigned long long device_max_id = 0;
@@ -200,16 +209,18 @@ timestamp_t getFileTimestamp(timestamp_t timestamp){
 }
 
 FILE *prepareFileHandle(FILE *cur_fp,const char *filename){
-    char cwd[MAXPATHLEN]; /* Current working dir path for error messages. */
+    char cwd[256]; /* Current working dir path for error messages. */
     int saved_errno;
 
 	if(cur_fp != NULL){
 	    /* Make sure data will not remain on the OS's output buffers */
+#ifndef WIN32
 		fflush(cur_fp);
 		fsync(fileno(cur_fp));
 /*	    if (reclaimFilePageCache(fileno(cur_fp), 0, 0) == -1) {
 	        mosquitto_log_printf(MOSQ_LOG_NOTICE,"Unable to reclaim cache after saving RDB: %s", strerror(errno));
 	    }*/
+#endif
 	    fclose(cur_fp);
 	}
 
@@ -217,7 +228,7 @@ FILE *prepareFileHandle(FILE *cur_fp,const char *filename){
     if (!fp) {
         saved_errno = errno;
         char *str_err = strerror(errno);
-        char *cwdp = getcwd(cwd,MAXPATHLEN);
+        char *cwdp = getcwd(cwd,256);
         mosquitto_log_printf(MOSQ_LOG_WARNING,
             "Failed opening the tsdb file %s (in server root dir %s) "
             "for saving: %s",
@@ -291,8 +302,10 @@ void deviceSaveToDisk(device* d){
     }
     raxStop(&ri);
     fwrite(index, index_size,1,saveContext->curDataFp);
+#ifndef WIN32
     fflush(saveContext->curDataFp);
     fsync(fileno(saveContext->curDataFp));
+#endif
 
     mosquitto_free(output);
     mosquitto_free(index);
@@ -1847,6 +1860,100 @@ int tsDelRuleCommand(int argc,char** argv,cJSON** j_responses) {
 	return tsRuleGenericCommand(j_responses,argc,argv,0);
 }
 
+#ifdef _WIN32
+void DeleteOldFile(void){
+	mosquitto_log_printf(MOSQ_LOG_NOTICE,"ts deleteOldFile start!!!");
+
+    struct _finddata_t fileinfo;
+    intptr_t handle;
+    handle = _findfirst(iedb_dir, &fileinfo);
+
+    if (handle == -1){
+    	mosquitto_log_printf(MOSQ_LOG_WARNING, "Can't open ts dir %s: %s",iedb_dir, strerror(errno));
+    	return;
+    }
+
+    int64_t maxDelFileId = 0;
+    int64_t curFileId = getFileTimestamp(mstime());
+
+	char dbPathName[128];
+
+	int64_t selectedTimeStamp[11];
+	int curFileNum = 0;
+	int maxFileNum = 10;
+	uint64_t cur_space = 0;
+    do {
+    	if(!(fileinfo.attrib & _A_NORMAL))
+    		continue;
+		int len = strlen(fileinfo.name);
+		if(len < 10 || strcmp(fileinfo.name + (len - 5),".data") != 0)
+			continue;
+
+		char *endptr = NULL;
+		int64_t endFileId = strtoll(fileinfo.name, &endptr, 10);
+		if(*endptr != '.')
+			continue;
+		int64_t tmpFileId = ts_retention_hours;
+		tmpFileId = endFileId + tmpFileId*TS_FILE_PERIOD;
+		if(ts_retention_hours == 0 || tmpFileId > curFileId ){
+			if(ts_retention_mbs > 0){
+				int j = curFileNum;
+				while(j){
+					if(endFileId < selectedTimeStamp[j-1]){
+						if(j < maxFileNum)
+							selectedTimeStamp[j] = selectedTimeStamp[j-1];
+					}else{
+						break;
+					}
+					j--;
+				}
+
+				selectedTimeStamp[j] = endFileId;
+				if(curFileNum < maxFileNum)
+					curFileNum++;
+			}
+
+			struct stat st;
+			snprintf(dbPathName,128,"%s/%" PRIu64 ".data",iedb_dir,endFileId);
+
+			cur_space += fileinfo.size;
+			continue;
+		}
+
+		if(lastDeleteFileId < endFileId)
+			lastDeleteFileId = endFileId;
+		snprintf(dbPathName,128,"%s/%" PRIu64 ".data",iedb_dir,endFileId);
+		unlink(dbPathName);
+		if(endFileId > maxDelFileId)
+			maxDelFileId = endFileId;
+		mosquitto_log_printf(MOSQ_LOG_NOTICE,"ts delete Old File for ts_retention_hours: %s!!!",dbPathName);
+
+    } while (_findnext(handle, &fileinfo) == 0);
+    _findclose(handle);
+
+	uint64_t dest_space = ts_retention_mbs;
+	dest_space *= 1024*1024;
+	for(int i = 0; i < curFileNum; i++){
+		if(cur_space < dest_space)
+			break;
+
+		struct stat st;
+		snprintf(dbPathName,128,"%s/%" PRIu64 ".data",iedb_dir,selectedTimeStamp[i]);
+		stat(dbPathName, &st);
+		cur_space -= st.st_size;
+		unlink(dbPathName);
+		if(selectedTimeStamp[i] > maxDelFileId)
+			maxDelFileId = selectedTimeStamp[i];
+
+		mosquitto_log_printf(MOSQ_LOG_NOTICE,"ts delete Old File for ts_retention_mbs : %s!!!",dbPathName);
+
+		if(lastDeleteFileId < selectedTimeStamp[i])
+			lastDeleteFileId = selectedTimeStamp[i];
+	}
+	if(maxDelFileId > 0)
+		db_delete_tsindex(maxDelFileId+TS_FILE_PERIOD);
+}
+#else
 void DeleteOldFile(void){
 	mosquitto_log_printf(MOSQ_LOG_NOTICE,"ts deleteOldFile start!!!");
 
@@ -1939,6 +2046,7 @@ void DeleteOldFile(void){
 		db_delete_tsindex(maxDelFileId+TS_FILE_PERIOD);
 
 }
+#endif
 
 int mqtt_tick_callback(int event, void *event_data, void *userdata){
 	static time_t pre_now_s = 0;
@@ -2476,7 +2584,7 @@ int tsDiffQueryCommand(int argc,char** argv,cJSON** j_responses) {
 const char *fast_double_parser_c_parse_number(const char *p, double *outDouble){
 	char *eptr;
 	double d = strtod(p,&eptr);
-	if (eptr[0] != '\0' || errno == ERANGE || isnan(d)){
+	if (eptr[0] != '\0' || errno == ERANGE ){
 		return NULL;
 	}
 	*outDouble = d;

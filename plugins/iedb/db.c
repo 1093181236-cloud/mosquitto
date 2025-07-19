@@ -8,8 +8,13 @@
 #include <sqlite3.h>
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <errno.h>
+
+#ifdef _WIN32
+#include <io.h>  // Windows equivalent of unistd.h functions
+#else
+#include <unistd.h>
+#endif
 
 #include "mosquitto.h"
 #include "mosquitto_broker.h"
@@ -519,6 +524,7 @@ int handle_block_asc(queryContext* qc,selectIndexCallback* cb,sqlite3_stmt *pStm
 		dest_end = src_end;
 		cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
 	}
+	return 0;
 }
 
 int handle_block_desc(queryContext* qc,selectIndexCallback* cb,sqlite3_stmt *pStmt,long long start,long long end,long long pos,long long max_fid,long long row_num,long long src_start,long long src_end){
@@ -570,6 +576,7 @@ int handle_block_desc(queryContext* qc,selectIndexCallback* cb,sqlite3_stmt *pSt
 		dest_end = src_end;
 		cb(qc,start,end,pos,max_fid,row_num,dest_start,dest_end);
 	}
+	return 0;
 }
 
 int db_select_tsindex(queryContext* qc,selectIndexCallback* cb){

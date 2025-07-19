@@ -57,20 +57,103 @@ int db_set_device_tag(int did,char* tname,char* tvalue){
 	return rc;
 }
 
-int db_list_devices(char* tname,char* tvalue,cJSON* j_tree){
-	cJSON *list = cJSON_CreateArray();
-	cJSON_AddItemToObject(j_tree,"devices",list);
-
+int db_list_devices(int argc,char** argv,cJSON* j_tree){
 	sqlite3_stmt *pSelectStmt;
-	int rc = sqlite3_prepare_v2(sqlite3_db,"SELECT device.name FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1 AND tags.value=?2",-1, &pSelectStmt, 0);
+	char* sql = "SELECT COUNT(*) FROM tags WHERE name=?1 AND value=?2";
+	int rc = sqlite3_prepare_v2(sqlite3_db,sql,-1, &pSelectStmt, 0);
+	if( rc != SQLITE_OK || pSelectStmt == NULL){
+		cJSON_AddStringToObject(j_tree,"error","sqlite error");
+		mosquitto_log_printf(MOSQ_LOG_ERR, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(sqlite3_db));
+    	return -1;
+	}
+    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+    sqlite3_bind_text(pSelectStmt, 2, argv[2], -1, SQLITE_STATIC);
+	if( sqlite3_step(pSelectStmt)==SQLITE_ROW ){
+		int total = sqlite3_column_int(pSelectStmt,0);
+		cJSON_AddNumberToObject(j_tree,"total",total);
+	}
+	sqlite3_finalize(pSelectStmt);
+
+	if(argc == 3)
+		sql = "SELECT device.name FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1 AND tags.value=?2";
+	else if(argc == 4)
+		sql = "SELECT device.name FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1 AND tags.value=?2 LIMIT ?3";
+	else
+		sql = "SELECT device.name FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1 AND tags.value=?2 LIMIT ?3 OFFSET ?4";
+	rc = sqlite3_prepare_v2(sqlite3_db,sql,-1, &pSelectStmt, 0);
 	if( rc != SQLITE_OK || pSelectStmt == NULL){
 		cJSON_AddStringToObject(j_tree,"error","sqlite error");
 		mosquitto_log_printf(MOSQ_LOG_ERR, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-    sqlite3_bind_text(pSelectStmt, 1, tname, -1, SQLITE_STATIC);
-    sqlite3_bind_text(pSelectStmt, 2, tvalue, -1, SQLITE_STATIC);
+	cJSON *list = cJSON_CreateArray();
+	cJSON_AddItemToObject(j_tree,"devices",list);
+	if(argc == 3){
+	    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+	    sqlite3_bind_text(pSelectStmt, 2, argv[2], -1, SQLITE_STATIC);
+	}else if(argc == 4){
+	    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+	    sqlite3_bind_text(pSelectStmt, 2, argv[2], -1, SQLITE_STATIC);
+	    sqlite3_bind_int(pSelectStmt, 3, atoi(argv[3]));
+	}else{
+	    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+	    sqlite3_bind_text(pSelectStmt, 2, argv[2], -1, SQLITE_STATIC);
+	    sqlite3_bind_int(pSelectStmt, 3, atoi(argv[3]));
+	    sqlite3_bind_int(pSelectStmt, 4, atoi(argv[4]));
+	}
+
+	while( sqlite3_step(pSelectStmt)==SQLITE_ROW ){
+		const char* dname = sqlite3_column_text(pSelectStmt,0);
+	    cJSON* j_row = cJSON_CreateString(dname);
+	    cJSON_AddItemToArray(list,j_row);
+	}
+	sqlite3_finalize(pSelectStmt);
+	return 0;
+}
+
+int db_list_devices_having_tag(int argc,char** argv,cJSON* j_tree){
+	sqlite3_stmt *pSelectStmt;
+	char* sql = "SELECT COUNT(*) FROM tags WHERE name=?1";
+	int rc = sqlite3_prepare_v2(sqlite3_db,sql,-1, &pSelectStmt, 0);
+	if( rc != SQLITE_OK || pSelectStmt == NULL){
+		cJSON_AddStringToObject(j_tree,"error","sqlite error");
+		mosquitto_log_printf(MOSQ_LOG_ERR, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(sqlite3_db));
+    	return -1;
+	}
+    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+	if( sqlite3_step(pSelectStmt)==SQLITE_ROW ){
+		int total = sqlite3_column_int(pSelectStmt,0);
+		cJSON_AddNumberToObject(j_tree,"total",total);
+	}
+	sqlite3_finalize(pSelectStmt);
+
+	if(argc == 2)
+		sql = "SELECT device.name FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1";
+	else if(argc == 3)
+		sql = "SELECT device.name FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1 LIMIT ?2";
+	else
+		sql = "SELECT device.name FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1 LIMIT ?2 OFFSET ?3";
+	rc = sqlite3_prepare_v2(sqlite3_db,sql,-1, &pSelectStmt, 0);
+	if( rc != SQLITE_OK || pSelectStmt == NULL){
+		cJSON_AddStringToObject(j_tree,"error","sqlite error");
+		mosquitto_log_printf(MOSQ_LOG_ERR, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(sqlite3_db));
+    	return -1;
+	}
+
+	cJSON *list = cJSON_CreateArray();
+	cJSON_AddItemToObject(j_tree,"devices",list);
+	if(argc == 2){
+	    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+	}else if(argc == 3){
+	    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+	    sqlite3_bind_int(pSelectStmt, 2, atoi(argv[2]));
+	}else{
+	    sqlite3_bind_text(pSelectStmt, 1, argv[1], -1, SQLITE_STATIC);
+	    sqlite3_bind_int(pSelectStmt, 2, atoi(argv[2]));
+	    sqlite3_bind_int(pSelectStmt, 3, atoi(argv[3]));
+	}
+
 	while( sqlite3_step(pSelectStmt)==SQLITE_ROW ){
 		const char* dname = sqlite3_column_text(pSelectStmt,0);
 	    cJSON* j_row = cJSON_CreateString(dname);
@@ -153,7 +236,13 @@ int tagCommand(int argc,char** argv,cJSON** j_responses){
 	    }else if (argc < 3) {
 	    	cJSON_AddStringToObject(j_tree,"info","missing tag value");
 	    }else{
-		    db_list_devices(argv[1],argv[2],j_tree);
+		    db_list_devices(argc,argv,j_tree);
+	    }
+	}else if(!strcasecmp(command, "listDevicesByName")){
+	    if (argc < 2) {
+	    	cJSON_AddStringToObject(j_tree,"info","missing tag name");
+	    }else{
+		    db_list_devices_having_tag(argc,argv,j_tree);
 	    }
 	}else if(!strcasecmp(command, "listTags")){
 	    if (argc < 2) {

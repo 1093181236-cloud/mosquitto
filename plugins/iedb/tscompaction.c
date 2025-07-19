@@ -7,7 +7,7 @@
 #include "tsrule.h"
 #include "mosquitto.h"
 #include "mosquitto_broker.h"
-
+#include "config.h"
 #include <ctype.h>
 #include <float.h>
 #include <math.h> // sqrt
@@ -15,9 +15,6 @@
 #include <assert.h>
 #include <stdlib.h>
 
-#ifdef _DEBUG
-#include "valgrind/valgrind.h"
-#endif
 
 #if __GNUC__ >= 3
 #define likely(x) __builtin_expect(!!(x), 1)
@@ -41,13 +38,12 @@ typedef struct MaxMinContext
     double maxValue;
 } MaxMinContext;
 
-static __attribute__((always_inline)) inline void _AssignIfGreater(double *__restrict__ value, double *__restrict__ newValues)
+static inline void _AssignIfGreater(double * value, double * newValues)
 {
     if(*newValues > *value) {
         *value = *newValues;
     }
 }
-
 
 typedef struct SingleValueContext
 {
@@ -88,7 +84,7 @@ typedef struct StdContext
 {
     double sum;
     double sum_2; // sum of (values^2)
-    u_int64_t cnt;
+    timestamp_t cnt;
 } StdContext;
 
 void finalize_empty_with_NAN(double *value) {
@@ -99,7 +95,8 @@ void finalize_empty_with_ZERO(double *value) {
     *value = 0;
 }
 
-void *SingleValueCreateContext(__attribute__((unused)) bool reverse) {
+void *SingleValueCreateContext(bool reverse) {
+	UNUSED(reverse);
     SingleValueContext *context = (SingleValueContext *)mosquitto_malloc(sizeof(SingleValueContext));
     context->value = 0;
     context->isResetted = TRUE;
@@ -117,14 +114,19 @@ void SingleValueFinalize(void *contextPtr, double *val) {
     *val = context->value;
 }
 
-void SingleValueWriteContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io) {
-    //SingleValueContext *context = (SingleValueContext *)contextPtr;
+void SingleValueWriteContext(void *contextPtr,void *io) {
+	UNUSED(contextPtr);
+	UNUSED(io);
+	//SingleValueContext *context = (SingleValueContext *)contextPtr;
     //RedisModule_SaveDouble(io, context->value);
     //RedisModule_SaveUnsigned(io, context->isResetted);
 }
 
-int SingleValueReadContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io, __attribute__((unused)) int encver) {
-    //SingleValueContext *context = (SingleValueContext *)contextPtr;
+int SingleValueReadContext(void *contextPtr, void *io,int encver) {
+	UNUSED(contextPtr);
+	UNUSED(io);
+	UNUSED(encver);
+	//SingleValueContext *context = (SingleValueContext *)contextPtr;
     //context->value = LoadDouble_IOError(io, goto err);
     //context->isResetted = LoadUnsigned_IOError(io, goto err);
     return TSDB_OK;
@@ -137,7 +139,8 @@ static inline void _AvgInitContext(AvgContext *context) {
     context->isOverflow = false;
 }
 
-void *AvgCreateContext(__attribute__((unused)) bool reverse) {
+void *AvgCreateContext(bool reverse) {
+	UNUSED(reverse);
     AvgContext *context = (AvgContext *)mosquitto_malloc(sizeof(AvgContext));
     _AvgInitContext(context);
     return context;
@@ -150,7 +153,8 @@ bool hasLongDouble = sizeof(long double) > 8;
 bool hasLongDouble = false;
 #endif
 
-void AvgAddValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
+void AvgAddValue(void *contextPtr, double value,timestamp_t ts) {
+	UNUSED(ts);
     AvgContext *context = (AvgContext *)contextPtr;
     context->cnt++;
 
@@ -244,15 +248,19 @@ void AvgReset(void *contextPtr) {
     _AvgInitContext(contextPtr);
 }
 
-void AvgWriteContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io) {
+void AvgWriteContext(void *contextPtr,void *io) {
+	UNUSED(contextPtr);
+	UNUSED(io);
     //AvgContext *context = (AvgContext *)contextPtr;
 //    RedisModule_SaveDouble(io, context->val);
 //    RedisModule_SaveDouble(io, context->cnt);
 //    RedisModule_SaveUnsigned(io, context->isOverflow);
 }
 
-int AvgReadContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io, __attribute__((unused)) int encver) {
-    //AvgContext *context = (AvgContext *)contextPtr;
+int AvgReadContext(void *contextPtr, void *io, int encver) {
+	UNUSED(contextPtr);
+	UNUSED(io);
+	//AvgContext *context = (AvgContext *)contextPtr;
     //context->val = LoadDouble_IOError(io, goto err);
     //context->cnt = LoadDouble_IOError(io, goto err);
     //context->isOverflow = false;
@@ -298,7 +306,9 @@ static inline void _update_twaContext(TwaContext *wcontext,
 void TwaAddBucketParams(void *contextPtr, timestamp_t bucketStartTS, timestamp_t bucketEndTS) {
     TwaContext *context = (TwaContext *)contextPtr;
     if (context->reverse) {
-        __SWAP(bucketStartTS, bucketEndTS);
+    	timestamp_t tmp = bucketStartTS;
+    	bucketStartTS = bucketEndTS;
+    	bucketEndTS = tmp;
     }
     context->weightData.bucketStartTS = bucketStartTS;
     context->weightData.bucketEndTS = bucketEndTS;
@@ -516,7 +526,8 @@ err:
     return TSDB_ERROR;
 }
 
-void *StdCreateContext(__attribute__((unused)) bool reverse) {
+void *StdCreateContext(bool reverse) {
+	UNUSED(reverse);
     StdContext *context = (StdContext *)mosquitto_malloc(sizeof(StdContext));
     context->cnt = 0;
     context->sum = 0;
@@ -524,7 +535,8 @@ void *StdCreateContext(__attribute__((unused)) bool reverse) {
     return context;
 }
 
-void StdAddValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
+void StdAddValue(void *contextPtr, double value,timestamp_t ts) {
+	UNUSED(ts);
     StdContext *context = (StdContext *)contextPtr;
     ++context->cnt;
     context->sum += value;
@@ -559,14 +571,14 @@ static inline double variance(double sum, double sum_2, double count) {
 
 void VarPopulationFinalize(void *contextPtr, double *value) {
     StdContext *context = (StdContext *)contextPtr;
-    u_int64_t count = context->cnt;
+    timestamp_t count = context->cnt;
     assert(count > 0);
     *value = variance(context->sum, context->sum_2, count);
 }
 
 void VarSamplesFinalize(void *contextPtr, double *value) {
     StdContext *context = (StdContext *)contextPtr;
-    u_int64_t count = context->cnt;
+    timestamp_t count = context->cnt;
     assert(count > 0);
     if (count == 1) {
         *value = 0;
@@ -594,15 +606,20 @@ void StdReset(void *contextPtr) {
     context->sum_2 = 0;
 }
 
-void StdWriteContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io) {
+void StdWriteContext(void *contextPtr,void *io) {
+	UNUSED(contextPtr);
+	UNUSED(io);
 //    StdContext *context = (StdContext *)contextPtr;
     //RedisModule_SaveDouble(io, context->sum);
     //RedisModule_SaveDouble(io, context->sum_2);
     //RedisModule_SaveUnsigned(io, context->cnt);
 }
 
-int StdReadContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io, __attribute__((unused)) int encver) {
-    //StdContext *context = (StdContext *)contextPtr;
+int StdReadContext(void *contextPtr,void *io,int encver) {
+	UNUSED(contextPtr);
+	UNUSED(io);
+	UNUSED(encver);
+	//StdContext *context = (StdContext *)contextPtr;
     //context->sum = LoadDouble_IOError(io, goto err);
     //context->sum_2 = LoadDouble_IOError(io, goto err);
     //context->cnt = LoadUnsigned_IOError(io, goto err);
@@ -710,19 +727,21 @@ static AggregationClass aggVarS = { .createContext = StdCreateContext,
                                     .getLastSample = NULL,
                                     .resetContext = StdReset };
 
-void *MaxMinCreateContext(__attribute__((unused)) bool reverse) {
+void *MaxMinCreateContext(bool reverse) {
+	UNUSED(reverse);
     MaxMinContext *context = (MaxMinContext *)mosquitto_malloc(sizeof(MaxMinContext));
     context->minValue = DBL_MAX;
     context->maxValue = _DOUBLE_MIN;
     return context;
 }
 
-void MaxAppendValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
+void MaxAppendValue(void *contextPtr, double value,timestamp_t ts) {
+	UNUSED(ts);
     _AssignIfGreater(&((MaxMinContext *)contextPtr)->maxValue, &value);
 }
 
-void MaxAppendValuesVec(void *__restrict__ context,
-                        double *__restrict__ values,
+void MaxAppendValuesVec(void * context,
+                        double * values,
                         size_t si,
                         size_t ei) {
     for (size_t i = si; i <= ei; ++i) {
@@ -730,14 +749,16 @@ void MaxAppendValuesVec(void *__restrict__ context,
     }
 }
 
-void MinAppendValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
+void MinAppendValue(void *contextPtr, double value,timestamp_t ts) {
+	UNUSED(ts);
     MaxMinContext *context = (MaxMinContext *)contextPtr;
     if (value < context->minValue) {
         context->minValue = value;
     }
 }
 
-void MaxMinAppendValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
+void MaxMinAppendValue(void *contextPtr, double value,timestamp_t ts) {
+	UNUSED(ts);
     MaxMinContext *context = (MaxMinContext *)contextPtr;
     if (value > context->maxValue) {
         context->maxValue = value;
@@ -850,21 +871,27 @@ void MaxMinReset(void *contextPtr) {
     context->maxValue = _DOUBLE_MIN;
 }
 
-void MaxMinWriteContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io) {
-    //MaxMinContext *context = (MaxMinContext *)contextPtr;
+void MaxMinWriteContext(void *contextPtr,void *io) {
+	UNUSED(contextPtr);
+	UNUSED(io);
+	//MaxMinContext *context = (MaxMinContext *)contextPtr;
     //RedisModule_SaveDouble(io, context->maxValue);
     //RedisModule_SaveDouble(io, context->minValue);
 }
 
-int MaxMinReadContext(__attribute__((unused)) void *contextPtr, __attribute__((unused)) void *io, __attribute__((unused)) int encver) {
-    //MaxMinContext *context = (MaxMinContext *)contextPtr;
+int MaxMinReadContext(void *contextPtr, void *io, int encver) {
+	UNUSED(contextPtr);
+	UNUSED(io);
+	UNUSED(encver);
+	//MaxMinContext *context = (MaxMinContext *)contextPtr;
     //context->maxValue = LoadDouble_IOError(io, goto err);
     //context->minValue = LoadDouble_IOError(io, goto err);
     return TSDB_OK;
 }
 
-void SumAppendValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
-    SingleValueContext *context = (SingleValueContext *)contextPtr;
+void SumAppendValue(void *contextPtr, double value, timestamp_t ts) {
+	UNUSED(ts);
+	SingleValueContext *context = (SingleValueContext *)contextPtr;
     context->value += value;
 }
 void SumAddContext(void *rulePtr,int subContextpos){
@@ -880,8 +907,10 @@ void SumRemoveContext(void *rulePtr,int subContextpos){
 	mcontext->value -= scontext->value;
 }
 
-void CountAppendValue(void *contextPtr,  __attribute__((unused)) double value, __attribute__((unused)) timestamp_t ts) {
-    SingleValueContext *context = (SingleValueContext *)contextPtr;
+void CountAppendValue(void *contextPtr,double value,timestamp_t ts) {
+	UNUSED(value);
+	UNUSED(ts);
+	SingleValueContext *context = (SingleValueContext *)contextPtr;
     context->value++;
 }
 
@@ -890,7 +919,8 @@ void CountFinalize(void *contextPtr, double *val) {
     *val = context->value;
 }
 
-void FirstAppendValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
+void FirstAppendValue(void *contextPtr, double value,timestamp_t ts) {
+	UNUSED(ts);
     SingleValueContext *context = (SingleValueContext *)contextPtr;
     if (context->isResetted) {
         context->isResetted = FALSE;
@@ -927,11 +957,14 @@ void LastAddContext(void *rulePtr,int subContextpos){
 	SingleValueContext *scontext = (SingleValueContext *)(r->subContext[subContextpos]);
 	mcontext->value = scontext->value;
 }
-void LastRemoveContext(__attribute__((unused)) void *rulePtr,__attribute__((unused)) int subContextpos){
+void LastRemoveContext(void *rulePtr,int subContextpos){
+	UNUSED(rulePtr);
+	UNUSED(subContextpos);
 	return;
 }
 
-void LastAppendValue(void *contextPtr, double value, __attribute__((unused)) timestamp_t ts) {
+void LastAppendValue(void *contextPtr, double value,timestamp_t ts) {
+	UNUSED(ts);
     SingleValueContext *context = (SingleValueContext *)contextPtr;
     context->value = value;
 }
@@ -1084,7 +1117,7 @@ int RMStringLenAggTypeToEnum(const char * aggTypeStr) {
 
 int StringLenAggTypeToEnum(const char *agg_type, size_t len) {
     int result = TS_AGG_INVALID;
-    char agg_type_lower[len];
+    char agg_type_lower[128];
     for (size_t i = 0; i < len; i++) {
         agg_type_lower[i] = tolower(agg_type[i]);
     }

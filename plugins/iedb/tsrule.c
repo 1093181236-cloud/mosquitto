@@ -23,8 +23,8 @@ void FreeCompactionRule(void *value) {
 }
 
 CompactionRule *NewRule(char*func,int aggType,
-                        uint64_t bucketDuration,
-                        uint64_t timestampAlignment) {
+		timestamp_t bucketDuration,
+		timestamp_t timestampAlignment) {
     if (bucketDuration == 0ULL) {
         return NULL;
     }

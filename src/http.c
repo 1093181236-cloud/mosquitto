@@ -17,6 +17,20 @@
 #include <openssl/rand.h>
 #include <openssl/md5.h>
 
+#if defined(_WIN32)
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#endif
+
+void GetCPUID(int info[4], int function_id) {
+#if defined(_WIN32)
+    __cpuid(info, function_id);
+#else
+    __cpuid(function_id, info[0], info[1], info[2], info[3]);
+#endif
+}
+
 static char cpuid_str[128] = {0};
 static time_t start_timestamp = 0;
 static time_t end_timestamp = 0;
@@ -103,10 +117,13 @@ int base64_decode(char *in, unsigned char **decoded, int *decoded_len)
 }
 
 void cpuid(void){
-	int eax, ebx, ecx, edx;
-	eax = 1; // processor serial number
-	asm volatile("cpuid": "=a" (eax),"=b" (ebx),"=c" (ecx),"=d" (edx): "0" (eax), "2" (ecx));
-    snprintf(cpuid_str,64,"%08X%08XubuntuCpuId", edx, eax);
+	//int eax, ebx, ecx, edx;
+	//eax = 1; // processor serial number
+	//asm volatile("cpuid": "=a" (eax),"=b" (ebx),"=c" (ecx),"=d" (edx): "0" (eax), "2" (ecx));
+    //snprintf(cpuid_str,64,"%08X%08XubuntuCpuId", edx, eax);
+	int info[4];
+	GetCPUID(info,1);
+	snprintf(cpuid_str,64,"%08X%08XubuntuCpuId", info[3], info[0]);
 
     MD5_CTX ctx;
     unsigned char digest[MD5_DIGEST_LENGTH];
@@ -139,7 +156,7 @@ int cpuidCommand(int argc,char** argv,cJSON** j_responses){
 
     char licence_filepath[256];
     #ifdef WIN32
-    	snprintf(licence_filepathh, 255, "%s\\licence", db.config->persistence_location);
+    	snprintf(licence_filepath, 255, "%s\\licence", db.config->persistence_location);
     #else
     	snprintf(licence_filepath, 255, "%s/licence", db.config->persistence_location);
     #endif
@@ -300,7 +317,7 @@ int licenceCommand(int argc,char** argv,cJSON** j_responses){
 
         char licence_filepath[256];
         #ifdef WIN32
-        	snprintf(licence_filepathh, 255, "%s\\licence", db.config->persistence_location);
+        	snprintf(licence_filepath, 255, "%s\\licence", db.config->persistence_location);
         #else
         	snprintf(licence_filepath, 255, "%s/licence", db.config->persistence_location);
         #endif
@@ -349,7 +366,7 @@ int check_licence(void){
 	if(end_timestamp == 0){
         char licence_filepath[256];
         #ifdef WIN32
-        	snprintf(licence_filepathh, 255, "%s\\licence", db.config->persistence_location);
+        	snprintf(licence_filepath, 255, "%s\\licence", db.config->persistence_location);
         #else
         	snprintf(licence_filepath, 255, "%s/licence", db.config->persistence_location);
         #endif
@@ -481,6 +498,7 @@ int url_unregister(char* url){
 		HASH_DELETE(hh, router_list, r);
 		mosquitto_free(r);
 	}
+	return 0;
 }
 
 int http_init(void){

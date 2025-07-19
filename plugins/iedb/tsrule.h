@@ -28,8 +28,8 @@ typedef struct CompactionRule{
 
 
 CompactionRule *NewRule(char*func,int aggType,
-                        u_int64_t bucketDuration,
-                        u_int64_t timestampAlignment);
+		timestamp_t bucketDuration,
+		timestamp_t timestampAlignment);
 
 void FreeCompactionRule(void *value);
 

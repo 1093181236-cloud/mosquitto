@@ -6,21 +6,13 @@
 #ifndef COMPACTION_H
 #define COMPACTION_H
 
-
-
-//#include <stdint.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <stdbool.h>
 
-#define timestamp_t u_int64_t
+#define timestamp_t uint64_t
 //#define api_timestamp_t u_int64_t
 
-#define __SWAP(x,y) do {  \
-  typeof(x) _x = x;      \
-  typeof(y) _y = y;      \
-  x = _y;                \
-  y = _x;                \
-} while(0)
 
 typedef struct Sample
 {
@@ -53,8 +45,8 @@ typedef struct AggregationClass
     void *(*createContext)(bool reverse);
     void (*freeContext)(void *context);
     void (*appendValue)(void *context, double value, timestamp_t ts);
-    void (*appendValueVec)(void *__restrict__ context,
-                           double *__restrict__ values,
+    void (*appendValueVec)(void * context,
+                           double * values,
                            size_t si,
                            size_t ei);
     void (*resetContext)(void *context);

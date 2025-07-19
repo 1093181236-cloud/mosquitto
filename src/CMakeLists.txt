@@ -68,6 +68,7 @@ set (MOSQ_SRCS
 	topic_tok.c
 	../lib/util_mosq.c ../lib/util_topic.c ../lib/util_mosq.h
 	../lib/utf8_mosq.c
+	http.c
 	websockets.c
 	will_delay.c
 	../lib/will_mosq.c ../lib/will_mosq.h)
