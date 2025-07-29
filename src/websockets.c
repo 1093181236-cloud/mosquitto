@@ -568,6 +568,7 @@ static int callback_http(
 	struct lws_pollargs *pollargs = (struct lws_pollargs *)in;
 
 	/* FIXME - ssl cert verification is done here. */
+	//log__printf(NULL, MOSQ_LOG_NOTICE, "in:%s,reason:%d",(char *)in,reason);
 
 	switch (reason) {
 		case LWS_CALLBACK_CLOSED_CLIENT_HTTP:
@@ -637,7 +638,7 @@ static int callback_http(
 						return -1;
 					}
 
-					log__printf(NULL, MOSQ_LOG_DEBUG, "http serving file \"%s\".", filename_canonical);
+					//log__printf(NULL, MOSQ_LOG_DEBUG, "http serving file \"%s\".", filename_canonical);
 					char* mime = cmd_select_format(filename_canonical);
 					free(filename_canonical);
 					/* FIXME - use header functions from lws 2.x */
@@ -894,6 +895,7 @@ void mosq_websockets_init(struct mosquitto__listener *listener, const struct mos
 		log__printf(NULL, MOSQ_LOG_ERR, "Http init fail.");
 		return;
 	}
+	log__printf(NULL, MOSQ_LOG_NOTICE, "Http init succeedfully.");
 
 	/* Count valid protocols */
 	for(protocol_count=0; protocols[protocol_count].name; protocol_count++);

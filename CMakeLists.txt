@@ -86,6 +86,8 @@ if (WITH_DLT)
 	add_definitions("-DWITH_DLT")
 endif (WITH_DLT)
 
+set(CJSON_INCLUDE_DIR "C:/Program Files (x86)/cJSON/include")
+set(CJSON_LIBRARY "C:/Program Files (x86)/cJSON/lib/cjson.lib")
 option(WITH_CJSON "Build with cJSON support (required for dynamic security plugin and useful for mosquitto_sub)?" ON)
 if (WITH_CJSON)
     FIND_PACKAGE(cJSON)

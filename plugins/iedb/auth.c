@@ -53,8 +53,10 @@ int check_hmac_sha256(const char* clinet_id, const char* username, const char* p
     SHA256_CTX ctx;
     char *cset = "0123456789abcdef";
 
-    if(strlen(password) != HASH_PASSWORD_LEN)
+    if(strlen(password) != HASH_PASSWORD_LEN){
+    	mosquitto_log_printf(MOSQ_LOG_ERR, "PASSWORD_LEN Error: %d.",strlen(password));
     	return -1;
+    }
 
     char* p = strchr(clinet_id,'|');
     if(p == NULL)
@@ -115,6 +117,7 @@ int check_hmac_sha256(const char* clinet_id, const char* username, const char* p
     }
 
     if(memcmp_const(password, hex, SHA256_BLOCK_SIZE)){
+    	mosquitto_log_printf(MOSQ_LOG_ERR, "PASSWORD Error:.");
     	return -1;
     }
 

@@ -242,8 +242,10 @@ int parser_licence(char* lic,size_t lic_len ){
 
     unsigned char* ciphertext;
     int ciphertext_len;
-    if(base64_decode(lic, &ciphertext, &ciphertext_len))
+    if(base64_decode(lic, &ciphertext, &ciphertext_len)){
+    	log__printf(NULL, MOSQ_LOG_WARNING, "parser_licence base64_decode failed!\n");
     	return 1;
+    }
 
     /* 执行解密 */
     decrypted = aes_cbc_decrypt(ciphertext, ciphertext_len, key, iv, &decrypted_len);
@@ -251,6 +253,7 @@ int parser_licence(char* lic,size_t lic_len ){
     if(decrypted) {
         /* 添加字符串终止符 */
         decrypted[decrypted_len] = '\0';
+        log__printf(NULL, MOSQ_LOG_WARNING, "parser_licence decrypted:%s\n",decrypted);
         if(cpuid_str[0] == 0)
         	cpuid();
         char* pos = strchr(decrypted,'/');
@@ -392,8 +395,10 @@ int check_licence(void){
 		mosquitto_free(buf);
 	}
 
-	if(db.now_s < start_timestamp || db.now_s > end_timestamp)
+	if(db.now_real_s < start_timestamp || db.now_real_s > end_timestamp){
+		log__printf(NULL, MOSQ_LOG_WARNING, "check_licence fail: now:%lld,start:%lld,end:%lld.",db.now_real_s,start_timestamp,end_timestamp);
 		return 1;
+	}
 	return 0;
 }
 
@@ -437,6 +442,7 @@ int run_url(const char *uri,const char *body,cJSON** j_responses){
 	if(strcmp(cmd_name,"cpuid") && strcmp(cmd_name,"licence") && check_licence()){
 		return HTTP_STATUS_UNAUTHORIZED;
 	}
+	log__printf(NULL, MOSQ_LOG_NOTICE, "cmd_name:%s,cmd_len:%d",cmd_name, cmd_len);
 
 	struct router *r = NULL;
 	HASH_FIND(hh, router_list, cmd_name, cmd_len, r);
