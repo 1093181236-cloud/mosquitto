@@ -59,7 +59,7 @@ int db_set_device_tag(int did,char* tname,char* tvalue){
 
 int db_list_devices(int argc,char** argv,cJSON* j_tree){
 	sqlite3_stmt *pSelectStmt;
-	char* sql = "SELECT COUNT(*) FROM tags WHERE name=?1 AND value=?2";
+	char* sql = "SELECT COUNT(*) FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1 AND tags.value=?2";
 	int rc = sqlite3_prepare_v2(sqlite3_db,sql,-1, &pSelectStmt, 0);
 	if( rc != SQLITE_OK || pSelectStmt == NULL){
 		cJSON_AddStringToObject(j_tree,"error","sqlite error");
@@ -114,7 +114,7 @@ int db_list_devices(int argc,char** argv,cJSON* j_tree){
 
 int db_list_devices_having_tag(int argc,char** argv,cJSON* j_tree){
 	sqlite3_stmt *pSelectStmt;
-	char* sql = "SELECT COUNT(*) FROM tags WHERE name=?1";
+	char* sql = "SELECT COUNT(*) FROM device INNER JOIN tags ON tags.did=device.id WHERE tags.name=?1";
 	int rc = sqlite3_prepare_v2(sqlite3_db,sql,-1, &pSelectStmt, 0);
 	if( rc != SQLITE_OK || pSelectStmt == NULL){
 		cJSON_AddStringToObject(j_tree,"error","sqlite error");

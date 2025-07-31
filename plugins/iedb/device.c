@@ -443,12 +443,22 @@ int tsAddGenericCommand(char* dn, timestamp_t t,cJSON *pps) {
 	size_t name_len = strlen(username)/2;
 	int need_set_tag = 0;
 
+	char* device_name = dn;
+	if(strcmp(device_name,"system") == 0){
+		device_name = mosquitto_malloc(name_len+7);
+		memcpy(device_name,"system",6);
+		memcpy(device_name+6,username,name_len);
+		device_name[name_len+6] = 0;
+	}
+
     /* Lookup the device at key. */
-    device *d = raxFind(devices,(unsigned char*)dn,strlen(dn));
+    device *d = raxFind(devices,(unsigned char*)device_name,strlen(device_name));
     if (d == raxNotFound){
     	d = deviceNew(++device_max_id);
-    	raxInsert(devices,(unsigned char*)dn,strlen(dn),d,NULL);
-    	db_insert_device(dn,device_max_id);
+    	raxInsert(devices,(unsigned char*)device_name,strlen(device_name),d,NULL);
+    	db_insert_device(device_name,device_max_id);
+    	if(device_name != dn)
+    		mosquitto_free(device_name);
 
     	need_set_tag = 1;
     	d->mqtt_username = username;

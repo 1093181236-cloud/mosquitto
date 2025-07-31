@@ -442,7 +442,7 @@ int run_url(const char *uri,const char *body,cJSON** j_responses){
 	if(strcmp(cmd_name,"cpuid") && strcmp(cmd_name,"licence") && check_licence()){
 		return HTTP_STATUS_UNAUTHORIZED;
 	}
-	log__printf(NULL, MOSQ_LOG_NOTICE, "cmd_name:%s,cmd_len:%d",cmd_name, cmd_len);
+	//log__printf(NULL, MOSQ_LOG_NOTICE, "cmd_name:%s,cmd_len:%d",cmd_name, cmd_len);
 
 	struct router *r = NULL;
 	HASH_FIND(hh, router_list, cmd_name, cmd_len, r);
