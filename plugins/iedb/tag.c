@@ -163,20 +163,30 @@ int db_list_devices_having_tag(int argc,char** argv,cJSON* j_tree){
 	return 0;
 }
 
-int db_list_tags(int did,cJSON* j_tree){
+int db_list_tags(int argc,char** argv,cJSON* j_tree){
+	char* sql = "SELECT name,value FROM tags WHERE did=?1";
 	sqlite3_stmt *pSelectStmt;
-	int rc = sqlite3_prepare_v2(sqlite3_db,"SELECT name,value FROM tags WHERE did=?1",-1, &pSelectStmt, 0);
+	int rc = sqlite3_prepare_v2(sqlite3_db,sql,-1, &pSelectStmt, 0);
 	if( rc != SQLITE_OK || pSelectStmt == NULL){
 		cJSON_AddStringToObject(j_tree,"error","sqlite error");
 		mosquitto_log_printf(MOSQ_LOG_ERR, "sqlite3_prepare_v2 error: %s\n", sqlite3_errmsg(sqlite3_db));
     	return -1;
 	}
 
-	sqlite3_bind_int64(pSelectStmt, 1, did);
-	while( sqlite3_step(pSelectStmt)==SQLITE_ROW ){
-		const char* name = sqlite3_column_text(pSelectStmt,0);
-		const char* value = sqlite3_column_text(pSelectStmt,1);
-		cJSON_AddStringToObject(j_tree,name,value);
+	for(int i = 1; i < argc; i++){
+	    device *d = raxFind(devices,(unsigned char*)argv[i],strlen(argv[i]));
+	    if (d == raxNotFound){
+	    	//cJSON_AddStringToObject(j_tree,"info","device not found");
+	    	continue;
+	    }
+	    cJSON *j_device = cJSON_AddObjectToObject(j_tree,argv[i]);
+	    sqlite3_bind_int64(pSelectStmt, 1, d->id);
+		while( sqlite3_step(pSelectStmt)==SQLITE_ROW ){
+			const char* name = sqlite3_column_text(pSelectStmt,0);
+			const char* value = sqlite3_column_text(pSelectStmt,1);
+			cJSON_AddStringToObject(j_device,name,value);
+		}
+		sqlite3_reset(pSelectStmt);
 	}
 	sqlite3_finalize(pSelectStmt);
 	return 0;
@@ -248,12 +258,7 @@ int tagCommand(int argc,char** argv,cJSON** j_responses){
 	    if (argc < 2) {
 	    	cJSON_AddStringToObject(j_tree,"info","missing device name");
 	    }else{
-	        device *d = raxFind(devices,(unsigned char*)argv[1],strlen(argv[1]));
-	        if (d == raxNotFound){
-	        	cJSON_AddStringToObject(j_tree,"info","device not found");
-	        }else{
-	        	db_list_tags(d->id,j_tree);
-	        }
+	    	db_list_tags(argc,argv,j_tree);
 	    }
 	}else if(!strcasecmp(command, "getTag")){
 	    if (argc < 2) {

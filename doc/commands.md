@@ -325,7 +325,7 @@ BOOL数据聚合查询
     tag/listDevicesByName/{tag name}/[limit]/[offset]    
 
 查询某个设备下所有标签：
-    tag/listTags/{device name}	
+    tag/listTags/{device name}/{device name}/{device name}.....	
     
 查询某个设备下某个标签的值：
     tag/getTag/{device name}/{tag name}   

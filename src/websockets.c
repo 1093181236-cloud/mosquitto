@@ -657,10 +657,14 @@ static int callback_http(
 					}
 		            lws_callback_on_writable(wsi);
 				}else{
-					cJSON* j_responses;
+					cJSON* j_responses = NULL;
 					int ret = run_url((const char *)in,NULL,&j_responses);
 					if (ret){
 						lws_return_http_status(wsi, ret, NULL);
+						return -1;
+					}
+					if(cJSON_IsNull(j_responses) || cJSON_IsInvalid(j_responses)){
+						lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 						return -1;
 					}
 					u->payload = cJSON_PrintUnformatted(j_responses);
@@ -718,15 +722,19 @@ static int callback_http(
 			if(u)
 				lws_spa_finalize(u->spa);
 			if(u && u->post_url){
-				cJSON* j_responses;
+				cJSON* j_responses = NULL;
 				char* body = lws_spa_get_string(u->spa, 0);
 				if(u->upload_buf)
 					body = u->upload_buf;
 				int ret = run_url((const char *)u->post_url,body,&j_responses);
 				mosquitto__free(u->post_url);
 				u->post_url = NULL;
-				if (ret){
+				if (ret ){
 					lws_return_http_status(wsi, ret, NULL);
+					return -1;
+				}
+				if(j_responses == NULL){
+					lws_return_http_status(wsi, HTTP_STATUS_INTERNAL_SERVER_ERROR, NULL);
 					return -1;
 				}
 				u->payload = cJSON_PrintUnformatted(j_responses);

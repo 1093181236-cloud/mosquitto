@@ -223,7 +223,10 @@ void AvgAddContext(void *rulePtr,int subContextpos){
 
 void AvgFinalize(void *contextPtr, double *value) {
     AvgContext *context = (AvgContext *)contextPtr;
-    assert(context->cnt > 0);
+    if(context->cnt <= 0){
+    	*value = context->val;
+    	return;
+    }
     if (unlikely(context->isOverflow)) {
         *value = context->val;
     } else {

@@ -9,7 +9,7 @@
 !define env_hklm 'HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"'
 
 Name "Luomi iotp"
-!define VERSION 2.0.22
+!define VERSION 2.0.23
 OutFile "iotp-${VERSION}-install-windows-x64.exe"
 
 !include "x64.nsh"
