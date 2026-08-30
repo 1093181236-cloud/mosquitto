@@ -366,6 +366,7 @@ static char *decode_uri(const char *uri, size_t length, size_t *out_len, int alw
 }
 
 int check_licence(void){
+	return 0;
 	if(end_timestamp == 0){
         char licence_filepath[256];
         #ifdef WIN32

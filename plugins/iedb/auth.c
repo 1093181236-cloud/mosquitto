@@ -134,15 +134,15 @@ int mqtt_basic_auth_callback(int event, void *event_data, void *userdata)
 	UNUSED(event);
 	UNUSED(userdata);
 
-	if(ed->username == NULL || ed->password == NULL) return MOSQ_ERR_AUTH;
+	if(ed->username == NULL || ed->password == NULL) return MOSQ_ERR_PLUGIN_DEFER;
     char* username = strchr(ed->username, '|');
-    if(username == NULL) return MOSQ_ERR_AUTH;
+    if(username == NULL) return MOSQ_ERR_PLUGIN_DEFER;
     username += 1;
     clientid = mosquitto_client_id(ed->client);
 	if(check_hmac_sha256(clientid,username,ed->password) == 0){
 		handle_client_auth(username,clientid);
 		return MOSQ_ERR_SUCCESS;
 	}else{
-		return MOSQ_ERR_AUTH;
+		return MOSQ_ERR_PLUGIN_DEFER;
 	}
 }

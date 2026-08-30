@@ -92,6 +92,7 @@ int uploadCommand(int argc,char** argv,cJSON** j_responses);
 int newdeviceCommand(int argc,char** argv,cJSON** j_responses);
 int deldeviceCommand(int argc,char** argv,cJSON** j_responses);
 int tsBoolQueryCommand(int argc,char** argv,cJSON** j_responses);
+int tsRangeQueryCommand(int argc,char** argv,cJSON** j_responses);
 
 int mqttCommand(int argc,char** argv,cJSON** j_responses);
 int tagCommand(int argc,char** argv,cJSON** j_responses);
@@ -206,6 +207,7 @@ int mosquitto_plugin_init(mosquitto_plugin_id_t *identifier, void **user_data, s
 	url_register("NEWDEVICE",newdeviceCommand);
 	url_register("DELDEVICE",deldeviceCommand);
 	url_register("TSBOOLQUERY",tsBoolQueryCommand);
+	url_register("TSRANGEQUERY",tsRangeQueryCommand);
 
 	url_register("role",roleCommand);
 	url_register("user",clientCommand);

@@ -3152,3 +3152,309 @@ int tsBoolQueryCommand(int argc,char** argv,cJSON** j_responses) {
     *j_responses = j_devices;
     return 0;
 }
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+int isInRange(RANGEQFIELD *f,cache *pCache,int rowId,double max_val,double min_val){
+	if(f->pField->type == FIELD_TYPE_DOUBLE){
+		double v = pCache->dvalue[rowId];
+		return v >= min_val && v <= max_val;
+	}else if(f->pField->type == FIELD_TYPE_TING_INT){
+		double v = pCache->tivalue[rowId];
+		return v >= min_val && v <= max_val;
+	}else if(f->pField->type == FIELD_TYPE_SMALL_INT){
+		double v = pCache->sivalue[rowId];
+		return v >= min_val && v <= max_val;
+	}else if(f->pField->type == FIELD_TYPE_INT){
+		double v = pCache->ivalue[rowId];
+		return v >= min_val && v <= max_val;
+	}else if(f->pField->type == FIELD_TYPE_BIG_INT){
+		double v = pCache->bivalue[rowId];
+		return v >= min_val && v <= max_val;
+	}else if(f->pField->type == FIELD_TYPE_FLOAT){
+		double v = pCache->fvalue[rowId];
+		return v >= min_val && v <= max_val;
+	}else{
+		return 0;
+	}
+}
+int addReplyCacheRange(RANGEQFIELD *f,cache *pCache,timestamp_t* curTimestamps,size_t curTotalSamples,timestamp_t startQueryTime,timestamp_t endQueryTime, long long dest_start,long long dest_end,	double max_val,double min_val){
+	int start,end,step;
+	start = 0;
+	end = curTotalSamples;
+	step = 1;
+	for(int rowId = start; rowId != end; rowId+=step){
+		if(curTimestamps[rowId] > dest_end || curTimestamps[rowId] < dest_start)
+			continue;
+
+		if(curTimestamps[rowId] < startQueryTime){
+			continue;
+		}
+		if(curTimestamps[rowId] > endQueryTime){
+				break;
+		}
+
+		if(bitmapTestBit(pCache->haveTimestamp,rowId) == 0)
+			continue;
+		if(bitmapTestBit(pCache->isValueNone,rowId))
+			continue;
+
+
+		if(isInRange(f,pCache,rowId,max_val,min_val)){
+			if(f->onStartTime == 0){
+				f->onStartTime = curTimestamps[rowId];
+			}
+		}else{
+			if(f->onStartTime > 0){
+				f->value += curTimestamps[rowId] - f->onStartTime;
+				f->onStartTime = 0;
+			}
+		}
+	}
+	return 0;
+}
+
+int select_index_callback_range(void *data, unsigned long long start,unsigned long long end,unsigned long long pos,unsigned long long max_fid,unsigned long long row_num, long long dest_start,long long dest_end){
+	queryContext* qc = data;
+
+	int timestamp_output_size = sizeof(timestamp_t)*CACHE_ROW_NUM;
+	int buffer_size = MAX_FIELD_STRING_LEN*CACHE_ROW_NUM;
+	if(qc->input == NULL){
+		qc->timestamp_output = mosquitto_malloc(timestamp_output_size);
+		qc->input = mosquitto_malloc(buffer_size);
+		qc->index = mosquitto_malloc(sizeof(FINDEX)*(qc->d->field_max_id+1));
+	}
+
+	if(qc->fileTimestamp != getFileTimestamp(end)){
+		if(qc->dataFp != NULL){
+			//reclaimFilePageCache(fileno(dataFp), 0, 0);
+			fclose(qc->dataFp);
+			qc->dataFp = NULL;
+		}
+
+		char dbPathName[128];
+		snprintf(dbPathName,128,"%s/%" PRIu64 ".data",iedb_dir,getFileTimestamp(end));
+
+		qc->dataFp = fopen(dbPathName, "r");
+		if(qc->dataFp == NULL){
+			return 0;
+		}
+		qc->fileTimestamp = getFileTimestamp(end);
+	}
+	fseek(qc->dataFp, pos,SEEK_SET);
+	if(fread(qc->index,1,sizeof(FINDEX)*(max_fid+1),qc->dataFp) != sizeof(FINDEX)*(max_fid+1))
+		return 0;
+
+	fseek(qc->dataFp, qc->index->dataOffset,SEEK_SET);
+	if(fread(qc->input,1,qc->index->dataLength,qc->dataFp) != qc->index->dataLength)
+		return 0;
+	lzf_decompress(qc->input, qc->index->dataLength,qc->timestamp_output,timestamp_output_size);
+
+	RANGEQFIELD* pFieldHeadTmp = qc->pFieldHead;
+	size_t max_cache_size = getFieldCacheSize(pFieldHeadTmp->pField->type);
+	cache* curCache = mosquitto_malloc(max_cache_size);
+	while(pFieldHeadTmp){
+		field* f = pFieldHeadTmp->pField;
+		if(f->id <= max_fid /*&& f->ctime < end*/){
+			FINDEX* findex = qc->index + f->id;
+			fseek(qc->dataFp, findex->dataOffset,SEEK_SET);
+			if(fread(qc->input,1,findex->dataLength,qc->dataFp) != (size_t)findex->dataLength)
+				break;
+
+			size_t cache_size = getFieldCacheSize(f->type);
+			if(cache_size > max_cache_size){
+				max_cache_size = cache_size;
+				curCache = mosquitto_realloc(curCache,cache_size);
+			}
+			lzf_decompress(qc->input, findex->dataLength,curCache,cache_size);
+
+			addReplyCacheRange(pFieldHeadTmp,curCache,qc->timestamp_output,row_num,qc->startQueryTime,qc->endQueryTime, dest_start,dest_end,qc->max_val,qc->min_val);
+		}
+		pFieldHeadTmp = pFieldHeadTmp->next;
+	}
+	mosquitto_free(curCache);
+	return 0;
+}
+
+void addReplyFiledRange(device *d,RANGEQFIELD* pFieldHead,timestamp_t startQueryTime,timestamp_t endQueryTime,double max_val,double min_val){
+	queryContext qc = {
+	        .pFieldHead = pFieldHead,
+	        .d = d,
+			.startQueryTime = startQueryTime,
+			.endQueryTime = endQueryTime,
+			.otype = ORDER_ASC,
+			.input = NULL,
+			.timestamp_output = NULL,
+			.dataFp = NULL,
+			.fileTimestamp = 0,
+			.index = NULL,
+			.max_val = max_val,
+			.min_val = min_val
+	    };
+	db_select_tsindex(&qc,select_index_callback_range);
+	if(qc.input != NULL){
+		mosquitto_free(qc.input);
+		mosquitto_free(qc.timestamp_output);
+		mosquitto_free(qc.index);
+	}
+
+	if(qc.dataFp != NULL){
+		//reclaimFilePageCache(fileno(dataFp), 0, 0);
+		fclose(qc.dataFp);
+	}
+
+
+	RANGEQFIELD* pFieldHeadTmp = pFieldHead;
+	while(pFieldHeadTmp){
+		field* f = pFieldHeadTmp->pField;
+		addReplyCacheRange(pFieldHeadTmp,f->pCache,d->timestamps,d->curTimestampPos+1,startQueryTime,endQueryTime,startQueryTime,endQueryTime,max_val,min_val);
+		pFieldHeadTmp = pFieldHeadTmp->next;
+	}
+}
+void tsRangeQuery(char** argv,cJSON *j_device,timestamp_t startQueryTime,timestamp_t endQueryTime,int device_id,int last_field_id,double max_val,double min_val){
+    device* d = raxFind(devices,(unsigned char*)argv[device_id],strlen(argv[device_id]));
+    if(d == raxNotFound){
+    	return;
+    }
+
+    RANGEQFIELD* pFieldHead = NULL;
+    RANGEQFIELD* pFieldPre = NULL;
+    if(device_id >= last_field_id){
+        raxIterator ri;
+        raxStart(&ri, d->fields);
+        raxSeek(&ri, "^", NULL, 0);
+        while (raxNext(&ri)) {
+        	field *f = ri.data;
+        	if(f->type != FIELD_TYPE_DOUBLE &&
+        			f->type != FIELD_TYPE_FLOAT &&
+					f->type != FIELD_TYPE_BIG_INT &&
+					f->type != FIELD_TYPE_INT &&
+					f->type != FIELD_TYPE_SMALL_INT &&
+					f->type != FIELD_TYPE_TING_INT)
+        		continue;
+
+        	char* fname = mosquitto_calloc(1,ri.key_len+1);
+        	memcpy(fname,ri.key,ri.key_len);
+
+        	RANGEQFIELD* pFieldTemp = mosquitto_calloc(1,sizeof(RANGEQFIELD));
+    		pFieldTemp->pField = f;
+    		pFieldTemp->value = 0;
+    		pFieldTemp->onStartTime = 0;
+    		pFieldTemp->name = fname;
+    		if(pFieldHead == NULL){
+    			pFieldHead = pFieldTemp;
+    		}else{
+    			pFieldPre->next = pFieldTemp;
+    		}
+    		pFieldPre = pFieldTemp;
+        }
+        raxStop(&ri);
+    }else{
+        for(int j = device_id+1; j<= last_field_id;j++){
+        	field* f = raxFind(d->fields,(unsigned char*)argv[j],strlen(argv[j]));
+        	if(f != raxNotFound && (f->type == FIELD_TYPE_DOUBLE || f->type == FIELD_TYPE_FLOAT ||f->type == FIELD_TYPE_BIG_INT ||f->type == FIELD_TYPE_INT ||f->type == FIELD_TYPE_TING_INT ||f->type == FIELD_TYPE_SMALL_INT)){
+        		RANGEQFIELD* pFieldTemp = mosquitto_calloc(1,sizeof(RANGEQFIELD));
+        		pFieldTemp->pField = f;
+        		pFieldTemp->value = 0;
+        		pFieldTemp->onStartTime = 0;
+        		pFieldTemp->name = argv[j];
+        		if(pFieldHead == NULL){
+        			pFieldHead = pFieldTemp;
+        		}else{
+        			pFieldPre->next = pFieldTemp;
+        		}
+        		pFieldPre = pFieldTemp;
+        	}
+        }
+    }
+
+    if(pFieldHead){
+    	addReplyFiledRange(d,pFieldHead,startQueryTime,endQueryTime,max_val,min_val);
+        timestamp_t now = mstime();
+        if(endQueryTime > now)
+        	endQueryTime = now;
+    	while(pFieldHead){
+    		RANGEQFIELD* curField = pFieldHead;
+    		if(curField->onStartTime > 0)
+    			curField->value += endQueryTime - curField->onStartTime;
+    		curField->value /= 1000;
+    		cJSON_AddNumberToObject(j_device,curField->name,curField->value);
+    		if(device_id >= last_field_id){
+    			mosquitto_free(curField->name);
+    		}
+    		pFieldHead = pFieldHead->next;
+    		mosquitto_free(curField);
+    	}
+    }
+
+}
+
+
+/* TSRANGEQUERY start end min max d1 f1 f2 [DEVICE d2] [DEVICE d3 f4 f5 f6]*/
+int tsRangeQueryCommand(int argc,char** argv,cJSON** j_responses) {
+    timestamp_t startQueryTime, endQueryTime;
+
+    if (argc < 5) {
+        /* If IDLE was provided we must have at least 'start end count' */
+    	return HTTP_STATUS_BAD_REQUEST;
+    }
+
+    /* Parse start and end IDs. */
+    if (genericParseTimestamp(argv[0],&startQueryTime,1) != C_OK){
+    	return HTTP_STATUS_BAD_REQUEST;
+    }
+    if (genericParseTimestamp(argv[1],&endQueryTime,1) != C_OK){
+    	return HTTP_STATUS_BAD_REQUEST;
+    }
+    startQueryTime *= 1000;
+    endQueryTime *= 1000;
+    if (startQueryTime > endQueryTime){
+    	timestamp_t tmp = startQueryTime;
+    	startQueryTime = endQueryTime;
+    	endQueryTime = tmp;
+    }
+
+    char *end;
+    double max_val = strtod(argv[2], &end);
+    double min_val = strtod(argv[3], &end);
+    if(min_val > max_val){
+    	double tmp = max_val;
+    	max_val = min_val;
+    	min_val = tmp;
+    }
+
+	cJSON *j_devices, *j_device;
+	j_devices = cJSON_CreateObject();
+
+    int device_id = 4;
+    int j = 5;
+    while(j < argc){
+    	if (strcasecmp(argv[j],"DEVICE") == 0){
+    		j_device = cJSON_CreateObject();
+    		if(j_device == NULL){
+    			cJSON_Delete(j_devices);
+    			return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+    		}
+    		cJSON_AddItemToObject(j_devices,argv[device_id], j_device);
+
+    		tsRangeQuery(argv,j_device,startQueryTime, endQueryTime,device_id,j-1,max_val,min_val);
+    		device_id = ++j;
+    	}
+
+    	j++;
+    }
+    if(device_id < argc){
+		j_device = cJSON_CreateObject();
+		if(j_device == NULL){
+			cJSON_Delete(j_devices);
+			return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+		}
+		cJSON_AddItemToObject(j_devices,argv[device_id], j_device);
+    	tsRangeQuery(argv,j_device,startQueryTime, endQueryTime,device_id,j-1,max_val,min_val);
+    }
+
+    *j_responses = j_devices;
+    return 0;
+}
+

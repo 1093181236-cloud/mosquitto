@@ -138,6 +138,8 @@ typedef struct _TSINDEX2{
 typedef struct _queryContext{
 	cJSON *j_device;
 	device *d;
+	double max_val;
+	double min_val;
 	timestamp_t startQueryTime;
 	timestamp_t endQueryTime;
 	void* pFieldHead;
@@ -165,6 +167,14 @@ typedef struct _BOOLQFIELD{
 	field* pField;
 	struct _BOOLQFIELD* next;
 }BOOLQFIELD,*PBOOLQFIELD;
+
+typedef struct _RANGEQFIELD{
+	char* name;
+	timestamp_t onStartTime;
+	timestamp_t value;
+	field* pField;
+	struct _RANGEQFIELD* next;
+}RANGEQFIELD,*PRANGEQFIELD;
 
 typedef struct _DIFFQFIELD{
 	int first_found;

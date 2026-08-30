@@ -55,7 +55,7 @@ WITH_MEMORY_TRACKING:=yes
 
 # Comment out to remove publishing of the $SYS topic hierarchy containing
 # information about the broker state.
-WITH_SYS_TREE:=yes
+WITH_SYS_TREE:=no
 
 # Build with systemd support. If enabled, mosquitto will notify systemd after
 # initialization. See README in service/systemd/ for more information.
