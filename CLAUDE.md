@@ -15,6 +15,7 @@ A fork of Eclipse Mosquitto **v2.0.20** (fork point = upstream commit `a196c2b2`
   ```
 - **Windows:** CMake + `vcpkg.json` (custom porting work; `#ifdef WIN32`/`_WIN32` branches throughout, including in `src/http.c` and `plugins/iedb/`).
 - **Docker (Linux only):** `make iotpdocker` builds the `luomi-iotp:<version>` Alpine image from `docker/iotp/` (broker + `iedb.so` + pub/sub/rr/ctrl/passwd). Requires `lws.tar.gz` and `cjson.tar.gz` to be present in `docker/iotp/`. Stock images live under `docker/2.0/` etc.
+- **CI binaries:** `.github/workflows/build-binary.yml` builds Linux x86_64 binaries (broker, `iedb.so`, clients, `libmosquitto.so.1`, confs) on every push to `master` (and `workflow_dispatch`) and uploads them as a tarball artifact under the Actions tab.
 - The iedb plugin links `-lcjson -lsqlite3`; cJSON, sqlite3, and OpenSSL are the main external deps.
 
 ## Tests

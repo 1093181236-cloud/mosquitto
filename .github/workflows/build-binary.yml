@@ -1,0 +1,46 @@
+name: Build Linux x86_64 binaries
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Install third party dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libcjson-dev \
+          libsqlite3-dev \
+          libssl-dev \
+          libwebsockets-dev
+
+    - uses: actions/checkout@v4
+
+    - name: Build
+      run: make -j"$(nproc)" binary
+
+    - name: Package binaries
+      id: package
+      run: |
+        VERSION=$(sed -n 's/^VERSION=//p' config.mk)
+        echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+        mkdir -p dist/bin dist/lib dist/plugin dist/conf
+        cp src/mosquitto dist/bin/
+        cp client/mosquitto_pub client/mosquitto_sub client/mosquitto_rr dist/bin/
+        cp apps/mosquitto_passwd/mosquitto_passwd apps/mosquitto_ctrl/mosquitto_ctrl dist/bin/
+        cp plugins/iedb/iedb.so plugins/dynamic-security/mosquitto_dynamic_security.so dist/plugin/
+        cp lib/libmosquitto.so.1 dist/lib/
+        cp mosquitto.conf mosquitto-docker.conf dist/conf/
+        cd dist && tar -czf "mosquitto-${VERSION}-linux-x86_64.tar.gz" .
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mosquitto-${{ steps.package.outputs.VERSION }}-linux-x86_64
+        path: dist/mosquitto-${{ steps.package.outputs.VERSION }}-linux-x86_64.tar.gz
