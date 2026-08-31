@@ -37,10 +37,10 @@ jobs:
         cp plugins/iedb/iedb.so plugins/dynamic-security/mosquitto_dynamic_security.so dist/plugin/
         cp lib/libmosquitto.so.1 dist/lib/
         cp mosquitto.conf mosquitto-docker.conf dist/conf/
-        cd dist && tar -czf "mosquitto-${VERSION}-linux-x86_64.tar.gz" .
+        cd dist && tar -czf "../mosquitto-${VERSION}-linux-x86_64.tar.gz" .
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: mosquitto-${{ steps.package.outputs.VERSION }}-linux-x86_64
-        path: dist/mosquitto-${{ steps.package.outputs.VERSION }}-linux-x86_64.tar.gz
+        path: mosquitto-${{ steps.package.outputs.VERSION }}-linux-x86_64.tar.gz
