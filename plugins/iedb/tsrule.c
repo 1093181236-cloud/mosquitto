@@ -1,7 +1,7 @@
 /*
  * rule.c
  *
- *  Created on: 2023Äê9ÔÂ4ÈÕ
+ *  Created on: 2023ï¿½ï¿½9ï¿½ï¿½4ï¿½ï¿½
  *      Author: a
  */
 
@@ -75,8 +75,7 @@ static inline timestamp_t BucketStartNormalize(timestamp_t bucketTS) {
 
 int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double value,double* aggVal,int otype) {
 	int ret = 0;
-    //timestamp_t currentTimestamp = CalcBucketStart(timestamp, rule->bucketDuration, rule->timestampAlignment);
-	timestamp_t currentTimestamp = timestamp;
+    timestamp_t currentTimestamp = CalcBucketStart(timestamp, rule->bucketDuration, rule->timestampAlignment);
     timestamp_t currentTimestampNormalized = BucketStartNormalize(currentTimestamp);
 
     if (rule->startCurrentTimeBucket == 0) {
@@ -86,13 +85,15 @@ int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double valu
 
         if (rule->aggClass->addBucketParams) {
             rule->aggClass->addBucketParams(rule->aggContext,
-            		timestamp,
-					timestamp + rule->bucketDuration);
+            		currentTimestampNormalized,
+					currentTimestampNormalized + rule->bucketDuration);
         }
     }
 
-    int tmp = ((timestamp - rule->startTime) % rule->bucketDuration);
-    int curSubContextPos = tmp /rule->timestampAlignment;
+    int64_t diff = (int64_t)timestamp - (int64_t)rule->startTime;
+    diff %= (int64_t)rule->bucketDuration;
+    if(diff < 0) diff += rule->bucketDuration;
+    int curSubContextPos = diff /rule->timestampAlignment;
     if(rule->curSubContextPos != curSubContextPos){
     	rule->aggClass->addContext(rule, rule->curSubContextPos);
     }
@@ -124,8 +125,8 @@ int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double valu
         //rule->aggClass->resetContext(rule->aggContext);
         if (rule->aggClass->addBucketParams) {
             rule->aggClass->addBucketParams(rule->aggContext,
-            		timestamp,
-					timestamp + rule->bucketDuration);
+            		currentTimestampNormalized,
+					currentTimestampNormalized + rule->bucketDuration);
         }
 
         if (rule->aggClass->addPrevBucketLastSample) {
@@ -134,7 +135,10 @@ int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double valu
         }
         //rule->startCurrentTimeBucket = timestamp;
         while((otype == ORDER_ASC && timestamp >= (rule->startCurrentTimeBucket + rule->bucketDuration)) || (otype == ORDER_DESC && timestamp <= (rule->startCurrentTimeBucket - rule->bucketDuration))){
-            int pos = ((rule->startCurrentTimeBucket - rule->startTime) % rule->bucketDuration) /rule->timestampAlignment;
+            int64_t pos_diff = (int64_t)rule->startCurrentTimeBucket - (int64_t)rule->startTime;
+            pos_diff %= (int64_t)rule->bucketDuration;
+            if(pos_diff < 0) pos_diff += rule->bucketDuration;
+            int pos = pos_diff /rule->timestampAlignment;
             rule->aggClass->removeContext(rule, pos);
             rule->aggClass->resetContext(rule->subContext[pos]);
             if(otype == ORDER_ASC)
@@ -160,8 +164,7 @@ int handleQueryCompaction(CompactionRule *rule,timestamp_t timestamp,double valu
 int handleCompaction(void *dp,CompactionRule *rule,timestamp_t timestamp,double value,double* aggVal) {
 	int ret = 0;
 	device *d = (device*)dp;
-    //timestamp_t currentTimestamp = CalcBucketStart(timestamp, rule->bucketDuration, rule->timestampAlignment);
-	timestamp_t currentTimestamp = timestamp;
+    timestamp_t currentTimestamp = CalcBucketStart(timestamp, rule->bucketDuration, rule->timestampAlignment);
     timestamp_t currentTimestampNormalized = BucketStartNormalize(currentTimestamp);
 
     if (rule->startCurrentTimeBucket == 0) {
@@ -172,12 +175,14 @@ int handleCompaction(void *dp,CompactionRule *rule,timestamp_t timestamp,double 
         if (rule->aggClass->addBucketParams) {
             rule->aggClass->addBucketParams(rule->subContext[rule->curSubContextPos],
                                             currentTimestampNormalized,
-                                            currentTimestamp + rule->timestampAlignment);
+                                            currentTimestampNormalized + rule->timestampAlignment);
         }
     }
 
-    int tmp = ((timestamp - rule->startTime) % rule->bucketDuration);
-    int curSubContextPos = tmp /rule->timestampAlignment;
+    int64_t diff = (int64_t)timestamp - (int64_t)rule->startTime;
+    diff %= (int64_t)rule->bucketDuration;
+    if(diff < 0) diff += rule->bucketDuration;
+    int curSubContextPos = diff /rule->timestampAlignment;
     if(rule->curSubContextPos != curSubContextPos){
     	rule->aggClass->addContext(rule, rule->curSubContextPos);
     }
@@ -200,7 +205,10 @@ int handleCompaction(void *dp,CompactionRule *rule,timestamp_t timestamp,double 
         //rule->aggClass->resetContext(rule->aggContext);
         //rule->startCurrentTimeBucket = currentTimestampNormalized;
         while ((timestamp - rule->startCurrentTimeBucket) > rule->bucketDuration){
-            int pos = ((rule->startCurrentTimeBucket - rule->startTime) % rule->bucketDuration) /rule->timestampAlignment;
+            int64_t pos_diff = (int64_t)rule->startCurrentTimeBucket - (int64_t)rule->startTime;
+            pos_diff %= (int64_t)rule->bucketDuration;
+            if(pos_diff < 0) pos_diff += rule->bucketDuration;
+            int pos = pos_diff /rule->timestampAlignment;
             rule->aggClass->removeContext(rule, pos);
             rule->aggClass->resetContext(rule->subContext[pos]);
             rule->startCurrentTimeBucket += rule->timestampAlignment;
@@ -214,7 +222,7 @@ int handleCompaction(void *dp,CompactionRule *rule,timestamp_t timestamp,double 
     	}
     	//rule->aggClass->resetContext(rule->subContext[curSubContextPos]);
     	if (rule->aggClass->addBucketParams) {
-    		rule->aggClass->addBucketParams(rule->subContext[curSubContextPos],currentTimestampNormalized,currentTimestamp + rule->timestampAlignment);
+    		rule->aggClass->addBucketParams(rule->subContext[curSubContextPos],currentTimestampNormalized,currentTimestampNormalized + rule->timestampAlignment);
     	}
     	if (rule->aggClass->addPrevBucketLastSample) {
     		rule->aggClass->addPrevBucketLastSample(rule->subContext[curSubContextPos], last_sample.value, last_sample.timestamp);
