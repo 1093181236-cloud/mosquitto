@@ -440,6 +440,8 @@ int tsAddGenericCommand(char* dn, timestamp_t t,cJSON *pps) {
     }
 
 	const char* username = mosquitto_client_username(curMqttclient);
+	if(username == NULL)
+		return -1;
 	size_t name_len = strlen(username)/2;
 	int need_set_tag = 0;
 
@@ -492,6 +494,8 @@ int mqtt_message_callback(int event, void *event_data, void *userdata){
 
 	size_t topic_len = strlen(ed->topic);
 	const char* username = mosquitto_client_username(ed->client);
+	if(username == NULL)
+		return MOSQ_ERR_SUCCESS;
 	size_t name_len = strlen(username)/2;
 	if(topic_len == (name_len+20)){
 		if(strncmp(ed->topic,"/edge/property/",15)){
