@@ -19,15 +19,18 @@
 
 #if defined(_WIN32)
 #include <intrin.h>
-#else
+#elif defined(__x86_64__) || defined(__i386__)
 #include <cpuid.h>
 #endif
 
 void GetCPUID(int info[4], int function_id) {
 #if defined(_WIN32)
     __cpuid(info, function_id);
-#else
+#elif defined(__x86_64__) || defined(__i386__)
     __cpuid(function_id, info[0], info[1], info[2], info[3]);
+#else
+    (void)info;
+    (void)function_id;
 #endif
 }
 
@@ -121,9 +124,26 @@ void cpuid(void){
 	//eax = 1; // processor serial number
 	//asm volatile("cpuid": "=a" (eax),"=b" (ebx),"=c" (ecx),"=d" (edx): "0" (eax), "2" (ecx));
     //snprintf(cpuid_str,64,"%08X%08XubuntuCpuId", edx, eax);
+#if defined(_WIN32) || defined(__x86_64__) || defined(__i386__)
 	int info[4];
 	GetCPUID(info,1);
 	snprintf(cpuid_str,64,"%08X%08XubuntuCpuId", info[3], info[0]);
+#else
+	/* No CPUID instruction on ARM etc.: fingerprint the machine from the
+	 * device-tree serial number or machine-id instead. */
+	const char *idfiles[] = {"/proc/device-tree/serial-number", "/etc/machine-id", NULL};
+	FILE *fptr = NULL;
+	for(int i = 0; idfiles[i] && fptr == NULL; i++){
+		fptr = fopen(idfiles[i], "r");
+	}
+	if(fptr){
+		size_t n = fread(cpuid_str, 1, 63, fptr);
+		fclose(fptr);
+		cpuid_str[n] = '\0';
+	}else{
+		snprintf(cpuid_str, 64, "ARMunknown");
+	}
+#endif
 
     MD5_CTX ctx;
     unsigned char digest[MD5_DIGEST_LENGTH];
