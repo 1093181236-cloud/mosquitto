@@ -1,9 +1,6 @@
 name: Build Linux x86_64 binaries
 
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
 
 jobs:

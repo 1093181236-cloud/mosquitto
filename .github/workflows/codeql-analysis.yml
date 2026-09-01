@@ -1,14 +1,9 @@
 # CodeQL security scanning for this fork.
-# Not triggered on pushes to master - run manually from the Actions tab
-# or wait for the weekly schedule.
+# Runs manually only - trigger from the Actions tab.
 
 name: "CodeQL"
 
 on:
-  push:
-    branches: [ fixes, develop, 1.6.x ]
-  schedule:
-    - cron: '44 18 * * 1'
   workflow_dispatch:
 
 permissions:
