@@ -13,10 +13,12 @@ A fork of Eclipse Mosquitto **v2.0.20** (fork point = upstream commit `a196c2b2`
   ```
   cmake . && make
   ```
+- **Local Docker build/test env (this Mac, OrbStack):** images `mosq-build:20.04` (x86_64 Ubuntu 20.04, compile+run) and `mosq-arm-build:20.04` (arm64, native gdb debugging — Rosetta blocks gdb/core analysis of x86 processes). Scratch source trees: `/tmp/mosq-src` (amd64) and `/tmp/mosq-arm64` (arm64), refreshed from git with `git archive HEAD | tar -x -C <dir>`. Build inside: `make -j4 binary BROKER_LDADD="-ldl -lm -lrt -lssl -lcrypto -lwebsockets -lcjson -lcap"`. Smoke test needs `http_dir` set in the conf, else all HTTP requests get an empty reply (websockets.c rejects them).
 - **Windows:** CMake + `vcpkg.json` (custom porting work; `#ifdef WIN32`/`_WIN32` branches throughout, including in `src/http.c` and `plugins/iedb/`).
 - **Docker (Linux only):** `make iotpdocker` builds the `luomi-iotp:<version>` Alpine image from `docker/iotp/` (broker + `iedb.so` + pub/sub/rr/ctrl/passwd). Requires `lws.tar.gz` and `cjson.tar.gz` to be present in `docker/iotp/`. Stock images live under `docker/2.0/` etc.
 - **CI binaries:** `.github/workflows/build-binary.yml` builds Linux x86_64 binaries (broker, `iedb.so`, clients, `libmosquitto.so.1`, confs) on every push to `master` (and `workflow_dispatch`) and uploads them as a tarball artifact under the Actions tab. Builds inside an `ubuntu:20.04` container (the GitHub `ubuntu-20.04` runner label is retired) so the binaries link glibc ≤ 2.17 and run on Ubuntu 20.04+.
 - The iedb plugin links `-lcjson -lsqlite3`; cJSON, sqlite3, and OpenSSL are the main external deps.
+- **Dependency version traps (verified):** Ubuntu 20.04's apt `libcjson-dev` is 1.7.13 which lacks `cJSON_ParseWithLength` (added 1.7.14) — iedb.so then fails to dlopen at runtime; build cJSON 1.7.14+ from source (static `.a` works). apt `libwebsockets-dev` is 3.2.1, which breaks the custom HTTP API (empty replies) and is ABI-incompatible with the lws 4.x headers the code expects — build lws 4.2.1 from source (same cmake flags as `docker/iotp/Dockerfile`); a static lws 4.2.1 additionally needs `-lcap` on the broker link line. The GitHub CI workflow `build-binary.yml` currently installs both from apt, so its artifacts carry these defects.
 
 ## Tests
 
