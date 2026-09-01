@@ -25,6 +25,7 @@ A fork of Eclipse Mosquitto **v2.0.20** (fork point = upstream commit `a196c2b2`
 - `make test` / `make check` — full suite, serial (slow). `make ptest` — parallel (20 workers). `make utest` — CUnit unit tests.
 - Run a single broker test: `cd test/broker && ./01-bad-initial-packets.py` — each `NN-*.py` file is a standalone test (Makefile groups them `01`…`14`). Client library tests are likewise standalone files under `test/lib/`.
 - Tests need Python 3 and CUnit. Broker tests spin up a broker on localhost ports (1888+).
+- **iedb end-to-end verification:** `test/iedb_verify.py` (run inside the docker env, see header docstring) — starts a broker with the iedb plugin, ingests 8 samples over MQTT using the plugin's HMAC auth (username must be `sn|<equal-length suffix>`), then asserts TSAGGQUERY timestamps are boundary-aligned and TSRANGEQUERY in-range time is exact.
 
 ## Architecture — custom layer
 
