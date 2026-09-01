@@ -15,16 +15,79 @@ jobs:
         apt-get install -y \
           build-essential \
           ca-certificates \
+          cmake \
+          curl \
           git \
-          libcjson-dev \
-          libsqlite3-dev \
+          libcap-dev \
           libssl-dev \
-          libwebsockets-dev
+          libsqlite3-dev
 
     - uses: actions/checkout@v4
 
+    # apt's libcjson-dev on focal is 1.7.13 which lacks cJSON_ParseWithLength
+    # (needed by iedb.so at runtime) - build 1.7.14 from source instead.
+    - name: Build cJSON 1.7.14 from source
+      run: |
+        curl -fL --retry 3 -o /tmp/cjson.tar.gz https://github.com/DaveGamble/cJSON/archive/v1.7.14.tar.gz
+        mkdir -p /build/cjson && tar --strip=1 -xf /tmp/cjson.tar.gz -C /build/cjson
+        make -C /build/cjson -j"$(nproc)" libcjson.a
+        mkdir -p /usr/local/include/cjson /usr/local/lib
+        cp /build/cjson/cJSON.h /usr/local/include/cjson/
+        cp /build/cjson/libcjson.a /usr/local/lib/
+
+    # apt's libwebsockets on focal is 3.2.1 which breaks the custom HTTP API -
+    # build 4.2.1 from source with the same flags as docker/iotp/Dockerfile.
+    # Static lws needs libcap, hence BROKER_LDADD gets -lcap in the Build step.
+    - name: Build libwebsockets 4.2.1 from source
+      run: |
+        curl -fL --retry 3 -o /tmp/lws.tar.gz https://github.com/warmcat/libwebsockets/archive/v4.2.1.tar.gz
+        mkdir -p /build/lws && tar --strip=1 -xf /tmp/lws.tar.gz -C /build/lws
+        cd /build/lws && cmake . \
+          -DCMAKE_BUILD_TYPE=MinSizeRel \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DDISABLE_WERROR=ON \
+          -DLWS_IPV6=ON \
+          -DLWS_WITHOUT_CLIENT=ON \
+          -DLWS_WITHOUT_EXTENSIONS=ON \
+          -DLWS_WITHOUT_TESTAPPS=ON \
+          -DLWS_WITH_EXTERNAL_POLL=ON \
+          -DLWS_WITH_HTTP2=OFF \
+          -DLWS_WITH_SHARED=OFF \
+          -DLWS_WITH_ZIP_FOPS=OFF \
+          -DLWS_WITH_ZLIB=OFF
+        make -j"$(nproc)" && make install
+
     - name: Build
-      run: make -j"$(nproc)" binary
+      run: make -j"$(nproc)" binary BROKER_LDADD="-ldl -lm -lrt -lssl -lcrypto -lwebsockets -lcjson -lcap"
+
+    - name: Smoke test
+      run: |
+        export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/lib"
+        mkdir -p /tmp/iedbdata /tmp/www && chmod 777 /tmp/iedbdata
+        cat > /tmp/smoke.conf <<EOF
+user root
+listener 1883
+allow_anonymous true
+plugin ${GITHUB_WORKSPACE}/plugins/iedb/iedb.so
+plugin_opt_iedb_dir /tmp/iedbdata
+listener 8080
+protocol websockets
+http_dir /tmp/www
+EOF
+        ./src/mosquitto -c /tmp/smoke.conf > /tmp/broker.log 2>&1 &
+        BROKER=$!
+        sleep 3
+        if ! kill -0 $BROKER 2>/dev/null; then echo "BROKER FAILED TO START"; cat /tmp/broker.log; exit 1; fi
+        ./client/mosquitto_sub -t "smoke/test" -C 1 -W 6 > /tmp/sub.out 2>&1 &
+        SUB=$!
+        sleep 1
+        ./client/mosquitto_pub -t "smoke/test" -m "ci-smoke" || exit 1
+        wait $SUB
+        [ "$(cat /tmp/sub.out)" = "ci-smoke" ] || { echo "MQTT SUB FAILED"; cat /tmp/broker.log; exit 1; }
+        CPUID=$(curl -s http://localhost:8080/cpuid/)
+        echo "$CPUID" | grep -q cpuid || { echo "HTTP API FAILED: $CPUID"; exit 1; }
+        echo "SMOKE_OK $CPUID"
+        kill $BROKER; wait $BROKER 2>/dev/null
 
     - name: Package binaries
       id: package
